@@ -536,7 +536,7 @@ function App() {
         await appWindow.setResizable(false)
         setMiniMode(true)
         document.documentElement.dataset.mini = 'true'
-        await appWindow.setSize(new LogicalSize(400, 156))
+        await appWindow.setSize(new LogicalSize(400, 94))
       } else {
         await appWindow.setAlwaysOnTop(false)
         await appWindow.setDecorations(true)
