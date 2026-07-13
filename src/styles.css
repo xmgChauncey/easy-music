@@ -4,6 +4,7 @@
 :root[data-theme='dark'] { --bg: #171716; --panel: #20201f; --card: #282725; --text: #f3f0ea; --muted: #a19d96; --line: #393734; --accent-soft: #533129; --shadow: 0 18px 50px rgba(0,0,0,.35); color-scheme: dark; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 960px; min-height: 100vh; overflow: hidden; background: var(--bg); color: var(--text); }
+:root[data-mini='true'], :root[data-mini='true'] body { background: transparent; }
 :root[data-mini='true'] body { min-width: 0; }
 button, input { font: inherit; }
 button { color: inherit; }
@@ -221,11 +222,11 @@ input[type='range']:hover::-webkit-slider-thumb { opacity: 1; }
 .scan-progress span { display: block; height: 100%; min-width: 8%; background: var(--accent); transition: width .2s; }
 @keyframes scan-spin { to { transform: rotate(360deg); } }
 
-.mini-player { position: relative; width: 100vw; height: 100vh; min-width: 0; padding: 14px 15px 13px 17px; display: grid; grid-template-columns: minmax(0, 1fr) 32px; align-items: center; gap: 12px; overflow: hidden; border: 1px solid var(--line); background: linear-gradient(125deg, color-mix(in srgb, var(--card) 96%, transparent), color-mix(in srgb, var(--panel) 76%, var(--card))); user-select: none; }
+.mini-player { position: relative; width: 100vw; height: 100vh; min-width: 0; padding: 14px 15px 13px 17px; display: grid; grid-template-columns: minmax(0, 1fr) 88px; align-items: center; gap: 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(125deg, color-mix(in srgb, var(--card) 96%, transparent), color-mix(in srgb, var(--panel) 76%, var(--card))); box-shadow: 0 12px 30px rgba(35, 31, 28, .18); opacity: var(--mini-opacity, .92); user-select: none; cursor: grab; }
+.mini-player:active { cursor: grabbing; }
 .mini-player::before { content: ''; position: absolute; width: 190px; height: 190px; left: -70px; bottom: -115px; border-radius: 50%; background: var(--accent-soft); filter: blur(20px); opacity: .55; pointer-events: none; }
 .mini-content { position: relative; z-index: 1; min-width: 0; align-self: stretch; padding: 1px 0; display: grid; grid-template-rows: 36px 29px 1fr; }
-.mini-drag { min-width: 0; cursor: grab; }
-.mini-drag:active { cursor: grabbing; }
+.mini-drag { min-width: 0; }
 .mini-drag strong, .mini-drag span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-drag strong { font: 700 13px 'Manrope'; }
 .mini-drag span { margin-top: 4px; color: var(--muted); font-size: 9px; }
@@ -238,9 +239,14 @@ input[type='range']:hover::-webkit-slider-thumb { opacity: 1; }
 .mini-controls .mini-play { width: 34px; height: 34px; color: var(--bg); background: var(--text); box-shadow: 0 5px 13px rgba(25, 22, 19, .2); }
 .mini-controls .mini-play:hover { background: var(--text); transform: scale(1.03); }
 .mini-controls button:last-child { margin-left: 5px; color: var(--muted); }
-.mini-window-actions { position: relative; z-index: 2; align-self: stretch; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; }
+.mini-window-actions { position: relative; z-index: 2; align-self: start; display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 2px; }
 .mini-window-actions button { border-radius: 7px; color: var(--muted); }
+.mini-window-actions button.active { color: var(--accent); background: color-mix(in srgb, var(--card) 82%, transparent); }
 .mini-window-actions button:last-child:hover { color: white; background: var(--accent); }
+.mini-opacity-panel { position: absolute; z-index: 5; top: 48px; right: 15px; width: 88px; padding: 9px 8px 10px; border: 1px solid color-mix(in srgb, var(--line) 78%, transparent); border-radius: 9px; background: color-mix(in srgb, var(--card) 94%, transparent); box-shadow: 0 9px 24px rgba(36, 31, 28, .16); cursor: default; }
+.mini-opacity-panel > div { margin-bottom: 9px; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 9px; }
+.mini-opacity-panel strong { color: var(--text); font-size: 10px; font-variant-numeric: tabular-nums; }
+.mini-opacity-panel input { width: 100%; display: block; }
 
 .now-playing-page { position: fixed; z-index: 25; inset: 0; isolation: isolate; overflow: hidden; color: var(--text); background: color-mix(in srgb, var(--bg) 94%, #d8cfc2); }
 .now-playing-background { position: absolute; inset: -25%; opacity: .16; filter: blur(90px) saturate(1.25); transform: scale(1.12); pointer-events: none; }

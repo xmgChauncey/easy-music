@@ -104,6 +104,11 @@ function App() {
   const [closeToTray, setCloseToTray] = useState(true)
   const [restorePlayback, setRestorePlayback] = useState(true)
   const [miniMode, setMiniMode] = useState(false)
+  const [miniOpacityOpen, setMiniOpacityOpen] = useState(false)
+  const [miniOpacity, setMiniOpacity] = useState(() => {
+    const savedOpacity = Number(localStorage.getItem('easy-mini-opacity'))
+    return Number.isFinite(savedOpacity) && savedOpacity >= .45 && savedOpacity <= 1 ? savedOpacity : .92
+  })
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false)
   const [lyrics, setLyrics] = useState<LyricsPayload | null>(null)
   const [lyricsLoading, setLyricsLoading] = useState(false)
@@ -502,6 +507,19 @@ function App() {
     else await appWindow.close()
   }
 
+  const changeMiniOpacity = (value: number) => {
+    const nextOpacity = Math.min(1, Math.max(.45, value))
+    setMiniOpacity(nextOpacity)
+    localStorage.setItem('easy-mini-opacity', String(nextOpacity))
+  }
+
+  const startMiniDragging = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!isTauri() || event.button !== 0) return
+    const target = event.target as HTMLElement
+    if (target.closest('button, input, a, [role="button"]')) return
+    void getCurrentWindow().startDragging().catch(() => undefined)
+  }
+
   const toggleMiniMode = async () => {
     const nextMiniMode = !miniMode
     if (!isTauri()) {
@@ -538,14 +556,18 @@ function App() {
 
   const pageTitle = view === 'discover' ? '下午好' : view === 'playlist' ? activePlaylist?.name || '播放列表' : ({ songs: '歌曲', albums: '专辑', artists: '歌手', favorites: '我的收藏', recent: '最近播放', settings: '设置' } as Record<Exclude<View, 'discover' | 'playlist'>, string>)[view]
 
-  if (miniMode) return <div className="mini-player">
+  if (miniMode) return <div className="mini-player" onMouseDown={startMiniDragging} style={{ '--mini-opacity': miniOpacity } as React.CSSProperties}>
     <audio ref={audio} onTimeUpdate={(event) => setProgress(event.currentTarget.currentTime)} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} onEnded={handlePlaybackEnded} />
     <div className="mini-content">
       <div className="mini-drag" data-tauri-drag-region="deep"><strong>{current?.title || '暂无播放'}</strong><span>{current?.artist || '请选择歌曲'} · {current?.album || '本地音乐'}</span></div>
       <div className="mini-timeline"><input type="range" min="0" max={duration || current?.duration || 1} value={progress} onChange={(event) => seekPlayer(Number(event.target.value))} style={{'--value': `${progress / (duration || current?.duration || 1) * 100}%`} as React.CSSProperties}/><div><span>{formatTime(progress)}</span><span>{formatTime(duration || current?.duration || 0)}</span></div></div>
       <div className="mini-controls"><PlaybackModeButton mode={playbackMode} onClick={cyclePlaybackMode} size={15}/><button onClick={() => next(-1)} title="上一首"><SkipBack size={16} fill="currentColor"/></button><button className="mini-play" onClick={togglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}</button><button onClick={() => next()} title="下一首"><SkipForward size={16} fill="currentColor"/></button><button onClick={() => changeVolume(state.volume ? 0 : .72)} title={state.volume ? `静音（当前 ${Math.round(state.volume * 100)}%）` : '取消静音'}>{state.volume ? <Volume2 size={15}/> : <VolumeX size={15}/>}</button></div>
     </div>
-    <div className="mini-window-actions"><button onClick={() => void toggleMiniMode()} title="返回主窗口"><Maximize2 size={14}/></button><button onClick={() => void windowAction('close')} title="关闭"><X size={15}/></button></div>
+    {miniOpacityOpen && <div className="mini-opacity-panel">
+      <div><span>透明度</span><strong>{Math.round(miniOpacity * 100)}%</strong></div>
+      <input aria-label="迷你播放器透明度" type="range" min=".45" max="1" step=".01" value={miniOpacity} onChange={(event) => changeMiniOpacity(Number(event.target.value))} style={{ '--value': `${(miniOpacity - .45) / .55 * 100}%` } as React.CSSProperties}/>
+    </div>}
+    <div className="mini-window-actions"><button className={miniOpacityOpen ? 'active' : ''} onClick={() => setMiniOpacityOpen(!miniOpacityOpen)} title={`调节透明度（当前 ${Math.round(miniOpacity * 100)}%）`}><SlidersHorizontal size={14}/></button><button onClick={() => void toggleMiniMode()} title="返回主窗口"><Maximize2 size={14}/></button><button onClick={() => void windowAction('close')} title="关闭"><X size={15}/></button></div>
   </div>
 
   return <div className="app-shell">
