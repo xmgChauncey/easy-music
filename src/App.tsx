@@ -689,7 +689,7 @@ function NowPlayingPage({ track, playing, progress, duration, volume, playbackMo
     <button className="now-playing-floating-back" onClick={onClose} title="返回音乐库"><ChevronLeft size={19}/><span>返回音乐库</span></button>
     <div className="now-playing-page-header">
       <div className="now-playing-header-title"><strong>正在播放</strong><span>{track?.album || '本地音乐'}</span></div>
-      <div className="now-playing-header-actions"><button className={favorite ? 'selected' : ''} onClick={onFavorite} title="收藏"><Heart size={18} fill={favorite ? 'currentColor' : 'none'}/></button><button onClick={onQueue} title="播放队列"><ListMusic size={18}/></button></div>
+      <div className="now-playing-header-actions"><button onClick={onQueue} title="播放队列"><ListMusic size={18}/></button></div>
     </div>
 
     <div className="now-playing-page-body">
@@ -697,7 +697,7 @@ function NowPlayingPage({ track, playing, progress, duration, volume, playbackMo
         <div className={`now-playing-art ${playing ? 'is-playing' : ''}`}><div className="art-shadow"/><Cover kind={track?.cover || 'ocean'} size="large"/></div>
         <div className="now-playing-meta"><span className="now-playing-kicker">{track?.format || '本地音频'}</span><h1>{track?.title || '暂无播放'}</h1><p>{track ? `${track.artist} · ${track.album}` : '请从音乐库中选择歌曲'}</p></div>
         <div className="now-playing-progress"><input type="range" min="0" max={duration || 1} value={progress} onChange={(event) => onSeek(Number(event.target.value))} style={{'--value': `${progress / (duration || 1) * 100}%`} as React.CSSProperties}/><div><span>{formatTime(progress)}</span><span>{formatTime(duration)}</span></div></div>
-        <div className="now-playing-controls"><PlaybackModeButton mode={playbackMode} onClick={onPlaybackMode} size={18}/><button onClick={onPrevious} title="上一首"><SkipBack size={24} fill="currentColor"/></button><button className="now-playing-main-play" onClick={onTogglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={25} fill="currentColor"/> : <Play size={25} fill="currentColor"/>}</button><button onClick={onNext} title="下一首"><SkipForward size={24} fill="currentColor"/></button></div>
+        <div className="now-playing-controls"><PlaybackModeButton mode={playbackMode} onClick={onPlaybackMode} size={18}/><button onClick={onPrevious} title="上一首"><SkipBack size={24} fill="currentColor"/></button><button className="now-playing-main-play" onClick={onTogglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={25} fill="currentColor"/> : <Play size={25} fill="currentColor"/>}</button><button onClick={onNext} title="下一首"><SkipForward size={24} fill="currentColor"/></button><button className={favorite ? 'selected' : ''} onClick={onFavorite} title={favorite ? '取消收藏' : '收藏'} aria-label={favorite ? '取消收藏' : '收藏'}><Heart size={21} fill={favorite ? 'currentColor' : 'none'}/></button></div>
         <div className="now-playing-volume"><button onClick={() => onVolume(volume ? 0 : .72)} title={volume ? '静音' : '取消静音'}>{volume ? <Volume2 size={17}/> : <VolumeX size={17}/>}</button><input aria-label="音量" type="range" min="0" max="1" step=".01" value={volume} onChange={(event) => onVolume(Number(event.target.value))} style={{'--value': `${volume * 100}%`} as React.CSSProperties}/><span className="volume-percent">{Math.round(volume * 100)}%</span></div>
       </div>
 
