@@ -5,7 +5,7 @@ import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   Album, AudioLines, ChevronDown, ChevronLeft, ChevronRight, Disc3, FolderPlus,
-  Heart, Home, ListMusic, Maximize2, Minimize2, MoreHorizontal, Music2, Pause,
+  Heart, Home, ListEnd, ListMusic, Maximize2, Minimize2, MoreHorizontal, Music2, Pause,
   Play, Plus, Repeat, Search, Settings, Shuffle, SkipBack, SkipForward, SlidersHorizontal,
   Sparkles, Star, Trash2, UserRound, Volume2, VolumeX, X,
 } from 'lucide-react'
@@ -13,6 +13,8 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { demoTracks, formatTime } from './library'
 import { activeLyricIndex, parseLyrics } from './lyrics'
+import { nextPlaybackMode, playbackStateForMode, resolvePlaybackMode } from './playbackMode'
+import type { PlaybackMode } from './playbackMode'
 import type { Playlist, RepeatMode, Track, View } from './types'
 
 type PlayerState = {
@@ -113,6 +115,7 @@ function App() {
   const resumePlayback = useRef<{ trackId: string; position: number } | null>(null)
   const current = state.tracks.find((track) => track.id === state.currentId) || state.tracks[0]
   const activePlaylist = state.playlists.find((playlist) => playlist.id === activePlaylistId)
+  const playbackMode = resolvePlaybackMode(state.repeat, state.shuffle)
 
   const setFolderInput = (node: HTMLInputElement | null) => {
     fileInput.current = node
@@ -268,12 +271,35 @@ function App() {
   }
 
   const next = (direction = 1) => {
-    const queue = state.shuffle ? [...state.queue].sort(() => Math.random() - .5) : state.queue
-    if (!queue.length) return
-    const index = queue.indexOf(current?.id)
-    const target = queue[(index + direction + queue.length) % queue.length]
+    if (!state.queue.length) return
+    const target = state.shuffle
+      ? (state.queue.filter((id) => id !== current?.id)[Math.floor(Math.random() * Math.max(1, state.queue.length - 1))] || state.queue[0])
+      : state.queue[(state.queue.indexOf(current?.id) + direction + state.queue.length) % state.queue.length]
     const track = state.tracks.find((item) => item.id === target)
     if (track) playTrack(track)
+  }
+
+  const cyclePlaybackMode = () => {
+    const nextState = playbackStateForMode(nextPlaybackMode(playbackMode))
+    state.setShuffle(nextState.shuffle)
+    state.setRepeat(nextState.repeat)
+  }
+
+  const handlePlaybackEnded = () => {
+    if (playbackMode === 'single') {
+      if (!isTauri() && audio.current) {
+        audio.current.currentTime = 0
+        setPlaying(true)
+        void audio.current.play().catch(() => setPlaying(false))
+      } else if (current) playTrack(current)
+      return
+    }
+    const currentIndex = state.queue.indexOf(current?.id)
+    if (playbackMode === 'sequence' && currentIndex >= state.queue.length - 1) {
+      setPlaying(false)
+      return
+    }
+    next()
   }
 
   mediaAction.current = (action) => {
@@ -316,11 +342,7 @@ function App() {
     if (!isTauri() || nativePlayer?.status !== 'ended' || !nativePlayer.trackId) return
     if (endedTrack.current === nativePlayer.trackId) return
     endedTrack.current = nativePlayer.trackId
-    if (state.repeat === 'one') {
-      if (current?.id === nativePlayer.trackId) playTrack(current)
-      return
-    }
-    next()
+    handlePlaybackEnded()
   }, [nativePlayer?.status, nativePlayer?.trackId])
 
   const seekPlayer = (value: number) => {
@@ -517,17 +539,17 @@ function App() {
   const pageTitle = view === 'discover' ? '下午好' : view === 'playlist' ? activePlaylist?.name || '播放列表' : ({ songs: '歌曲', albums: '专辑', artists: '歌手', favorites: '我的收藏', recent: '最近播放', settings: '设置' } as Record<Exclude<View, 'discover' | 'playlist'>, string>)[view]
 
   if (miniMode) return <div className="mini-player">
-    <audio ref={audio} onTimeUpdate={(event) => setProgress(event.currentTarget.currentTime)} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} onEnded={() => next()} />
+    <audio ref={audio} onTimeUpdate={(event) => setProgress(event.currentTarget.currentTime)} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} onEnded={handlePlaybackEnded} />
     <div className="mini-content">
       <div className="mini-drag" data-tauri-drag-region="deep"><strong>{current?.title || '暂无播放'}</strong><span>{current?.artist || '请选择歌曲'} · {current?.album || '本地音乐'}</span></div>
       <div className="mini-timeline"><input type="range" min="0" max={duration || current?.duration || 1} value={progress} onChange={(event) => seekPlayer(Number(event.target.value))} style={{'--value': `${progress / (duration || current?.duration || 1) * 100}%`} as React.CSSProperties}/><div><span>{formatTime(progress)}</span><span>{formatTime(duration || current?.duration || 0)}</span></div></div>
-      <div className="mini-controls"><button onClick={() => next(-1)} title="上一首"><SkipBack size={16} fill="currentColor"/></button><button className="mini-play" onClick={togglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}</button><button onClick={() => next()} title="下一首"><SkipForward size={16} fill="currentColor"/></button><button onClick={() => changeVolume(state.volume ? 0 : .72)} title={state.volume ? '静音' : '取消静音'}>{state.volume ? <Volume2 size={15}/> : <VolumeX size={15}/>}</button></div>
+      <div className="mini-controls"><PlaybackModeButton mode={playbackMode} onClick={cyclePlaybackMode} size={15}/><button onClick={() => next(-1)} title="上一首"><SkipBack size={16} fill="currentColor"/></button><button className="mini-play" onClick={togglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}</button><button onClick={() => next()} title="下一首"><SkipForward size={16} fill="currentColor"/></button><button onClick={() => changeVolume(state.volume ? 0 : .72)} title={state.volume ? '静音' : '取消静音'}>{state.volume ? <Volume2 size={15}/> : <VolumeX size={15}/>}</button></div>
     </div>
     <div className="mini-window-actions"><button onClick={() => void toggleMiniMode()} title="返回主窗口"><Maximize2 size={14}/></button><button onClick={() => void windowAction('close')} title="关闭"><X size={15}/></button></div>
   </div>
 
   return <div className="app-shell">
-    <audio ref={audio} onTimeUpdate={(event) => setProgress(event.currentTarget.currentTime)} onLoadedMetadata={(event) => { setDuration(event.currentTarget.duration); if (current) current.duration = Math.round(event.currentTarget.duration) }} onEnded={() => state.repeat === 'one' ? (audio.current!.currentTime = 0, audio.current!.play()) : next()} />
+    <audio ref={audio} onTimeUpdate={(event) => setProgress(event.currentTarget.currentTime)} onLoadedMetadata={(event) => { setDuration(event.currentTarget.duration); if (current) current.duration = Math.round(event.currentTarget.duration) }} onEnded={handlePlaybackEnded} />
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><AudioLines size={19} /></div><span>轻音乐</span></div>
       <div className="side-label">音乐库</div>
@@ -566,8 +588,7 @@ function App() {
       progress={progress}
       duration={duration || current?.duration || 0}
       volume={state.volume}
-      repeat={state.repeat}
-      shuffle={state.shuffle}
+      playbackMode={playbackMode}
       favorite={Boolean(current && state.favorites.includes(current.id))}
       lyrics={lyrics}
       lyricsLoading={lyricsLoading}
@@ -578,14 +599,13 @@ function App() {
       onSeek={seekPlayer}
       onVolume={changeVolume}
       onFavorite={() => current && toggleFavorite(current.id)}
-      onShuffle={state.toggleShuffle}
-      onRepeat={() => state.setRepeat(state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off')}
+      onPlaybackMode={cyclePlaybackMode}
       onQueue={() => { setNowPlayingOpen(false); setQueueOpen(true) }}
     />}
 
     <footer className="player-bar">
       <div className="now-playing"><button className="now-playing-info" title="打开正在播放" onClick={() => setNowPlayingOpen(true)}><Cover kind={current?.cover || 'ocean'} size="normal"/><div><strong>{current?.title || '暂无播放'}</strong><span>{current?.artist || '请选择歌曲'}</span></div></button><button title="收藏" onClick={() => current && toggleFavorite(current.id)}><Heart size={17} fill={current && state.favorites.includes(current.id) ? 'currentColor' : 'none'}/></button></div>
-      <div className="transport"><div className="transport-buttons"><button className={state.shuffle ? 'selected' : ''} onClick={state.toggleShuffle}><Shuffle size={16}/></button><button onClick={() => next(-1)}><SkipBack size={19} fill="currentColor"/></button><button className="main-play" onClick={togglePlay}>{playing ? <Pause size={19} fill="currentColor"/> : <Play size={19} fill="currentColor"/>}</button><button onClick={() => next()}><SkipForward size={19} fill="currentColor"/></button><button className={state.repeat !== 'off' ? 'selected' : ''} onClick={() => state.setRepeat(state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off')}><Repeat size={16}/>{state.repeat === 'one' && <sup>1</sup>}</button></div><div className="timeline"><span>{formatTime(progress)}</span><input type="range" min="0" max={duration || current?.duration || 1} value={progress} onChange={(e) => seekPlayer(Number(e.target.value))} style={{'--value': `${progress / (duration || current?.duration || 1) * 100}%`} as React.CSSProperties}/><span>{formatTime(duration || current?.duration || 0)}</span></div></div>
+      <div className="transport"><div className="transport-buttons"><PlaybackModeButton mode={playbackMode} onClick={cyclePlaybackMode} size={16}/><button onClick={() => next(-1)} title="上一首"><SkipBack size={19} fill="currentColor"/></button><button className="main-play" onClick={togglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={19} fill="currentColor"/> : <Play size={19} fill="currentColor"/>}</button><button onClick={() => next()} title="下一首"><SkipForward size={19} fill="currentColor"/></button></div><div className="timeline"><span>{formatTime(progress)}</span><input type="range" min="0" max={duration || current?.duration || 1} value={progress} onChange={(e) => seekPlayer(Number(e.target.value))} style={{'--value': `${progress / (duration || current?.duration || 1) * 100}%`} as React.CSSProperties}/><span>{formatTime(duration || current?.duration || 0)}</span></div></div>
       <div className="player-tools"><button onClick={() => setQueueOpen(!queueOpen)} className={queueOpen ? 'selected' : ''} title="播放队列"><ListMusic size={18}/></button><button onClick={() => changeVolume(state.volume ? 0 : .72)} title={state.volume ? '静音' : '取消静音'}>{state.volume ? <Volume2 size={18}/> : <VolumeX size={18}/>}</button><input className="volume" type="range" min="0" max="1" step=".01" value={state.volume} onChange={(e) => changeVolume(Number(e.target.value))} style={{'--value': `${state.volume * 100}%`} as React.CSSProperties}/><button onClick={() => setNowPlayingOpen(true)} title="打开正在播放"><Maximize2 size={16}/></button><button onClick={() => void toggleMiniMode()} title="迷你播放器"><ChevronDown size={17}/></button></div>
     </footer>
 
@@ -598,14 +618,18 @@ function App() {
   </div>
 }
 
-function NowPlayingPage({ track, playing, progress, duration, volume, repeat, shuffle, favorite, lyrics, lyricsLoading, onClose, onTogglePlay, onPrevious, onNext, onSeek, onVolume, onFavorite, onShuffle, onRepeat, onQueue }: {
+function PlaybackModeButton({ mode, onClick, size = 16 }: { mode: PlaybackMode; onClick: () => void; size?: number }) {
+  const labels: Record<PlaybackMode, string> = { sequence: '顺序播放', loop: '循环播放', shuffle: '随机播放', single: '单曲循环' }
+  return <button className={`playback-mode-button mode-${mode}`} onClick={onClick} title={`${labels[mode]}（点击切换）`} aria-label={labels[mode]}>{mode === 'sequence' ? <ListEnd size={size}/> : mode === 'shuffle' ? <Shuffle size={size}/> : <Repeat size={size}/>} {mode === 'single' && <sup>1</sup>}</button>
+}
+
+function NowPlayingPage({ track, playing, progress, duration, volume, playbackMode, favorite, lyrics, lyricsLoading, onClose, onTogglePlay, onPrevious, onNext, onSeek, onVolume, onFavorite, onPlaybackMode, onQueue }: {
   track?: Track
   playing: boolean
   progress: number
   duration: number
   volume: number
-  repeat: RepeatMode
-  shuffle: boolean
+  playbackMode: PlaybackMode
   favorite: boolean
   lyrics: LyricsPayload | null
   lyricsLoading: boolean
@@ -616,8 +640,7 @@ function NowPlayingPage({ track, playing, progress, duration, volume, repeat, sh
   onSeek: (value: number) => void
   onVolume: (value: number) => void
   onFavorite: () => void
-  onShuffle: () => void
-  onRepeat: () => void
+  onPlaybackMode: () => void
   onQueue: () => void
 }) {
   const parsedLyrics = useMemo(() => lyrics ? parseLyrics(lyrics.content) : { lines: [], synced: false }, [lyrics])
@@ -652,7 +675,7 @@ function NowPlayingPage({ track, playing, progress, duration, volume, repeat, sh
         <div className={`now-playing-art ${playing ? 'is-playing' : ''}`}><div className="art-shadow"/><Cover kind={track?.cover || 'ocean'} size="large"/></div>
         <div className="now-playing-meta"><span className="now-playing-kicker">{track?.format || '本地音频'}</span><h1>{track?.title || '暂无播放'}</h1><p>{track ? `${track.artist} · ${track.album}` : '请从音乐库中选择歌曲'}</p></div>
         <div className="now-playing-progress"><input type="range" min="0" max={duration || 1} value={progress} onChange={(event) => onSeek(Number(event.target.value))} style={{'--value': `${progress / (duration || 1) * 100}%`} as React.CSSProperties}/><div><span>{formatTime(progress)}</span><span>{formatTime(duration)}</span></div></div>
-        <div className="now-playing-controls"><button className={shuffle ? 'selected' : ''} onClick={onShuffle} title="随机播放"><Shuffle size={18}/></button><button onClick={onPrevious} title="上一首"><SkipBack size={24} fill="currentColor"/></button><button className="now-playing-main-play" onClick={onTogglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={25} fill="currentColor"/> : <Play size={25} fill="currentColor"/>}</button><button onClick={onNext} title="下一首"><SkipForward size={24} fill="currentColor"/></button><button className={repeat !== 'off' ? 'selected' : ''} onClick={onRepeat} title="循环模式"><Repeat size={18}/>{repeat === 'one' && <sup>1</sup>}</button></div>
+        <div className="now-playing-controls"><PlaybackModeButton mode={playbackMode} onClick={onPlaybackMode} size={18}/><button onClick={onPrevious} title="上一首"><SkipBack size={24} fill="currentColor"/></button><button className="now-playing-main-play" onClick={onTogglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={25} fill="currentColor"/> : <Play size={25} fill="currentColor"/>}</button><button onClick={onNext} title="下一首"><SkipForward size={24} fill="currentColor"/></button></div>
         <div className="now-playing-volume"><button onClick={() => onVolume(volume ? 0 : .72)} title={volume ? '静音' : '取消静音'}>{volume ? <Volume2 size={17}/> : <VolumeX size={17}/>}</button><input type="range" min="0" max="1" step=".01" value={volume} onChange={(event) => onVolume(Number(event.target.value))} style={{'--value': `${volume * 100}%`} as React.CSSProperties}/></div>
       </div>
 
