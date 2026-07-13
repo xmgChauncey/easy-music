@@ -86,6 +86,20 @@ h1, h2, h3, p { margin: 0; }
 .album-card > strong, .album-card > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .album-card > strong { margin-top: 10px; font-size: 12px; }
 .album-card > span { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.album-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 210px)); justify-content: start; gap: 25px 22px; }
+.album-library-grid .album-card { padding: 9px 9px 12px; border-radius: 12px; transition: background .18s, transform .18s; }
+.album-library-grid .album-card:hover { background: color-mix(in srgb, var(--panel) 70%, transparent); transform: translateY(-2px); }
+.album-detail-header { min-height: 174px; padding: 15px 18px; display: grid; grid-template-columns: 34px 144px minmax(0, 1fr) auto; align-items: center; gap: 17px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--panel) 68%, transparent); }
+.album-back { width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; color: var(--muted); background: var(--card); cursor: pointer; }
+.album-back:hover { color: var(--text); }
+.album-detail-cover { width: 144px; height: 144px; overflow: hidden; border-radius: 11px; box-shadow: 0 8px 22px rgba(34, 30, 27, .16); }
+.album-detail-cover .cover { width: 100%; height: 100%; }
+.album-detail-copy { min-width: 0; }
+.album-detail-copy > span { color: var(--accent); font-size: 9px; font-weight: 700; letter-spacing: .14em; }
+.album-detail-copy h2 { margin-top: 8px; overflow: hidden; font: 700 clamp(21px, 2.7vw, 30px) 'Manrope'; text-overflow: ellipsis; white-space: nowrap; }
+.album-detail-copy p { margin-top: 7px; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.album-play-all { height: 37px; padding: 0 14px; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 9px; color: var(--bg); background: var(--text); font-size: 11px; font-weight: 600; cursor: pointer; }
+.album-detail .track-table { margin-top: 20px; }
 .cover { flex: none; border-radius: 7px; overflow: hidden; position: relative; isolation: isolate; background: #8aa0a8; }
 .cover img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .cover::before, .cover::after { content: ''; position: absolute; z-index: -1; }

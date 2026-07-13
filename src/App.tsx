@@ -236,6 +236,7 @@ function App() {
       : state.tracks
     return query ? base.filter((track) => `${track.title} ${track.artist} ${track.album}`.toLocaleLowerCase().includes(query)) : base
   }, [search, state.tracks, state.favorites, state.recent, state.playlists, activePlaylistId, view])
+  const albumCount = useMemo(() => new Set(filtered.map((track) => (track.album.trim() || '未知专辑').toLocaleLowerCase())).size, [filtered])
 
   const playTrack = (track: Track) => {
     state.setCurrent(track.id)
@@ -589,7 +590,7 @@ function App() {
     <main className="main">
       <header><div className="history"><button title="后退"><ChevronLeft size={19}/></button><button title="前进" disabled><ChevronRight size={19}/></button></div><label className="search"><Search size={17}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索歌曲、歌手或专辑…"/><kbd>Ctrl K</kbd></label><div className="window-actions"><button title="最小化" onClick={() => void windowAction('minimize')}><Minimize2 size={14}/></button><button title="最大化" onClick={() => void windowAction('maximize')}><Maximize2 size={14}/></button><button title="关闭" onClick={() => void windowAction('close')}><X size={15}/></button></div></header>
       <section className="content">
-        <div className="page-heading"><div><h1>{pageTitle}</h1><p>{view === 'discover' ? '继续享受上次的音乐时光。' : view === 'playlist' ? `播放列表中共 ${filtered.length} 首歌曲，可拖动排序` : `本地音乐库中共 ${filtered.length} 项`}</p></div><div className="heading-actions">{view === 'playlist' && activePlaylist && <><button className="outline-button" onClick={() => openPlaylistDialog('rename')}>重命名</button><button className="outline-button danger" onClick={() => openPlaylistDialog('delete')}><Trash2 size={14}/>删除</button></>}<button className="import-button" disabled={scanning} onClick={chooseMusicFolder}><FolderPlus size={17}/>{scanning ? '扫描中…' : '选择目录'}</button></div></div>
+        <div className="page-heading"><div><h1>{pageTitle}</h1><p>{view === 'discover' ? '继续享受上次的音乐时光。' : view === 'playlist' ? `播放列表中共 ${filtered.length} 首歌曲，可拖动排序` : view === 'albums' ? `本地音乐库中共 ${albumCount} 张专辑` : `本地音乐库中共 ${filtered.length} 项`}</p></div><div className="heading-actions">{view === 'playlist' && activePlaylist && <><button className="outline-button" onClick={() => openPlaylistDialog('rename')}>重命名</button><button className="outline-button danger" onClick={() => openPlaylistDialog('delete')}><Trash2 size={14}/>删除</button></>}<button className="import-button" disabled={scanning} onClick={chooseMusicFolder}><FolderPlus size={17}/>{scanning ? '扫描中…' : '选择目录'}</button></div></div>
         {scanError && <div className="scan-error"><span>{scanError}</span><button onClick={() => setScanError('')}><X size={15}/></button></div>}
 
         {view === 'discover' && <>
@@ -599,7 +600,8 @@ function App() {
           <div className="section-title"><h2>静谧时刻</h2><button>查看更多 <ChevronRight size={15}/></button></div>
         </>}
 
-        {view !== 'discover' && view !== 'settings' && <TrackTable tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={view === 'playlist' ? undefined : setAddToPlaylistTrack} onRemove={view === 'playlist' ? removeTrackFromPlaylist : undefined} onReorder={view === 'playlist' ? reorderActivePlaylist : undefined}/>} 
+        {view === 'albums' && <AlbumBrowser tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={setAddToPlaylistTrack}/>}
+        {view !== 'discover' && view !== 'settings' && view !== 'albums' && <TrackTable tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={view === 'playlist' ? undefined : setAddToPlaylistTrack} onRemove={view === 'playlist' ? removeTrackFromPlaylist : undefined} onReorder={view === 'playlist' ? reorderActivePlaylist : undefined}/>}
         {view === 'settings' && <SettingsPanel theme={theme} setTheme={setTheme} onImport={chooseMusicFolder} closeToTray={closeToTray} restorePlayback={restorePlayback} onSettingsChange={updateAppSettings} />}
       </section>
     </main>
@@ -711,6 +713,57 @@ function NowPlayingPage({ track, playing, progress, duration, volume, playbackMo
       </div>
     </div>
   </section>
+}
+
+function AlbumBrowser({ tracks, currentId, favorites, onPlay, onFavorite, onAdd }: {
+  tracks: Track[]
+  currentId?: string
+  favorites: string[]
+  onPlay: (track: Track) => void
+  onFavorite: (id: string) => void
+  onAdd: (track: Track) => void
+}) {
+  const [selectedAlbum, setSelectedAlbum] = useState('')
+  const albums = useMemo(() => {
+    const groups = new Map<string, { key: string; name: string; tracks: Track[]; artists: string[] }>()
+    tracks.forEach((track) => {
+      const name = track.album.trim() || '未知专辑'
+      const key = name.toLocaleLowerCase()
+      const group = groups.get(key)
+      if (group) {
+        group.tracks.push(track)
+        if (!group.artists.includes(track.artist)) group.artists.push(track.artist)
+      } else {
+        groups.set(key, { key, name, tracks: [track], artists: [track.artist] })
+      }
+    })
+    return [...groups.values()].sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'))
+  }, [tracks])
+  const activeAlbum = albums.find((album) => album.key === selectedAlbum)
+
+  if (!albums.length) return <div className="empty"><Album size={38}/><h3>这里还没有专辑</h3><p>请选择音乐目录，或清除当前搜索。</p></div>
+
+  if (activeAlbum) {
+    const artistLabel = activeAlbum.artists.join('、')
+    return <div className="album-detail">
+      <div className="album-detail-header">
+        <button className="album-back" onClick={() => setSelectedAlbum('')} title="返回全部专辑"><ChevronLeft size={18}/></button>
+        <div className="album-detail-cover"><Cover kind={activeAlbum.tracks[0].cover} size="large"/></div>
+        <div className="album-detail-copy"><span>专辑</span><h2>{activeAlbum.name}</h2><p>{artistLabel} · {activeAlbum.tracks.length} 首歌曲</p></div>
+        <button className="album-play-all" onClick={() => onPlay(activeAlbum.tracks[0])}><Play size={17} fill="currentColor"/>播放专辑</button>
+      </div>
+      <TrackTable tracks={activeAlbum.tracks} currentId={currentId} favorites={favorites} onPlay={onPlay} onFavorite={onFavorite} onAdd={onAdd}/>
+    </div>
+  }
+
+  return <div className="album-library-grid">{albums.map((album) => {
+    const artistLabel = album.artists.slice(0, 2).join('、') + (album.artists.length > 2 ? ' 等' : '')
+    return <button className="album-card" key={album.key} onClick={() => setSelectedAlbum(album.key)}>
+      <div className="album-cover"><Cover kind={album.tracks[0].cover} size="large"/><span className="album-play"><ChevronRight size={18}/></span></div>
+      <strong>{album.name}</strong>
+      <span>{artistLabel} · {album.tracks.length} 首</span>
+    </button>
+  })}</div>
 }
 
 function TrackTable({ tracks, currentId, favorites, onPlay, onFavorite, onAdd, onRemove, onReorder }: {
