@@ -1,5 +1,6 @@
 mod desktop;
 mod library;
+mod lyrics;
 mod player;
 mod watcher;
 
@@ -80,6 +81,7 @@ pub fn run() {
             library::remove_track_from_playlist,
             library::reorder_playlist,
             desktop::set_app_settings,
+            lyrics::get_track_lyrics,
             player::player_load,
             player::player_play,
             player::player_pause,

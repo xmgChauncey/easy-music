@@ -129,6 +129,9 @@ h1, h2, h3, p { margin: 0; }
 .now-playing strong { font-size: 11px; }
 .now-playing span { margin-top: 3px; font-size: 9px; color: var(--muted); }
 .now-playing button { margin-left: 6px; color: var(--accent); }
+.now-playing .now-playing-info { min-width: 0; max-width: calc(100% - 42px); margin: 0; padding: 0; display: flex; align-items: center; gap: 11px; color: var(--text); text-align: left; }
+.now-playing-info > div:last-child { min-width: 0; }
+.now-playing-info:hover strong { color: var(--accent); }
 .transport { display: flex; flex-direction: column; align-items: center; gap: 5px; }
 .transport-buttons { display: flex; align-items: center; gap: 16px; }
 .transport button { width: 23px; height: 26px; color: var(--text); position: relative; }
@@ -229,4 +232,56 @@ input[type='range']:hover::-webkit-slider-thumb { opacity: 1; }
 .mini-timeline { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; display: flex; align-items: flex-end; }
 .mini-timeline input { width: 100%; height: 3px; }
 
-@media (max-width: 1100px) { .app-shell { grid-template-columns: 190px 1fr; } .album-grid { gap: 12px; } .hero-card { grid-template-columns: 50% 1fr; } .track-head, .track-row { grid-template-columns: 30px minmax(190px,1.5fr) minmax(120px,1fr) 60px 50px 50px; padding: 0 10px; } }
+.now-playing-page { position: fixed; z-index: 25; inset: 0; isolation: isolate; overflow: hidden; color: var(--text); background: color-mix(in srgb, var(--bg) 94%, #d8cfc2); }
+.now-playing-background { position: absolute; inset: -25%; opacity: .16; filter: blur(90px) saturate(1.25); transform: scale(1.12); pointer-events: none; }
+.now-playing-background .cover { width: 100%; height: 100%; border-radius: 0; }
+.now-playing-page::after { content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none; background: linear-gradient(115deg, color-mix(in srgb, var(--bg) 82%, transparent), color-mix(in srgb, var(--card) 90%, transparent)); }
+.now-playing-page-header { position: relative; z-index: 2; height: 76px; padding: 0 34px 0 180px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 13px; border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent); }
+.now-playing-page-header > button, .now-playing-header-actions button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 9px; color: var(--muted); background: color-mix(in srgb, var(--card) 48%, transparent); cursor: pointer; }
+.now-playing-floating-back { position: fixed; z-index: 10000; top: 18px; left: 28px; width: auto; height: 40px; padding: 0 14px 0 10px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: color-mix(in srgb, var(--card) 94%, transparent); box-shadow: 0 6px 18px rgba(42, 36, 31, .1); font-size: 11px; font-weight: 700; cursor: pointer; }
+.now-playing-floating-back:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); transform: translateX(-2px); }
+.now-playing-header-title strong, .now-playing-header-title span { display: block; }
+.now-playing-header-title strong { font: 700 13px 'Manrope'; }
+.now-playing-header-title span { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.now-playing-header-actions { display: flex; gap: 6px; }
+.now-playing-header-actions button.selected { color: var(--accent); }
+.now-playing-page-body { position: relative; z-index: 1; width: min(1160px, calc(100vw - 76px)); height: calc(100vh - 76px); margin: 0 auto; padding: 34px 20px 38px; display: grid; grid-template-columns: minmax(360px, .92fr) minmax(390px, 1.08fr); align-items: center; gap: clamp(48px, 7vw, 105px); }
+.now-playing-art-column { width: min(100%, 420px); justify-self: center; display: flex; flex-direction: column; align-items: center; }
+.now-playing-art { position: relative; width: min(38vh, 350px); aspect-ratio: 1; border-radius: 22px; }
+.now-playing-art .cover { position: relative; z-index: 2; width: 100%; height: 100%; border-radius: 22px; box-shadow: 0 24px 54px rgba(40, 32, 27, .26); }
+.now-playing-art .art-shadow { position: absolute; z-index: 1; left: 10%; right: 10%; bottom: -19px; height: 34px; border-radius: 50%; background: #161412; opacity: .22; filter: blur(18px); }
+.now-playing-art.is-playing .cover { animation: cover-breathe 5s ease-in-out infinite; }
+@keyframes cover-breathe { 50% { transform: translateY(-3px); box-shadow: 0 30px 64px rgba(40, 32, 27, .3); } }
+.now-playing-meta { width: 100%; margin-top: 30px; text-align: center; }
+.now-playing-kicker { color: var(--accent); font-size: 9px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+.now-playing-meta h1 { margin-top: 8px; overflow: hidden; font: 700 clamp(23px, 3vw, 32px) 'Manrope'; letter-spacing: -.035em; text-overflow: ellipsis; white-space: nowrap; }
+.now-playing-meta p { margin-top: 6px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.now-playing-progress { width: 100%; margin-top: 22px; }
+.now-playing-progress input { width: 100%; height: 4px; }
+.now-playing-progress > div { margin-top: 7px; display: flex; justify-content: space-between; color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+.now-playing-controls { margin-top: 8px; display: flex; align-items: center; gap: 22px; }
+.now-playing-controls button, .now-playing-volume button { position: relative; width: 32px; height: 36px; display: grid; place-items: center; border: 0; color: var(--text); background: none; cursor: pointer; }
+.now-playing-controls button.selected { color: var(--accent); }
+.now-playing-controls button sup { position: absolute; top: 2px; right: 0; font-size: 7px; }
+.now-playing-controls .now-playing-main-play { width: 53px; height: 53px; border-radius: 50%; color: var(--bg); background: var(--text); box-shadow: 0 9px 22px rgba(28, 25, 22, .22); }
+.now-playing-volume { width: 145px; margin-top: 10px; display: grid; grid-template-columns: 25px 1fr; align-items: center; gap: 8px; }
+.now-playing-volume button { width: 25px; height: 25px; color: var(--muted); }
+.now-playing-volume input { width: 100%; }
+.lyrics-column { min-width: 0; height: min(680px, calc(100vh - 130px)); display: flex; flex-direction: column; }
+.lyrics-heading { padding: 12px 10px 18px; display: flex; align-items: flex-end; justify-content: space-between; }
+.lyrics-heading h2 { margin-top: 4px; font: 700 25px 'Manrope'; letter-spacing: -.03em; }
+.lyrics-heading > span { max-width: 180px; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.lyrics-scroll { position: relative; flex: 1; min-height: 0; padding: 42% 10px; overflow-y: auto; scroll-behavior: smooth; scrollbar-width: none; mask-image: linear-gradient(to bottom, transparent, black 11%, black 89%, transparent); }
+.lyrics-scroll::-webkit-scrollbar { display: none; }
+.lyrics-scroll > button { width: 100%; min-height: 48px; padding: 7px 0; display: block; border: 0; color: color-mix(in srgb, var(--muted) 72%, transparent); background: none; font: 600 clamp(16px, 1.55vw, 20px) 'Manrope'; line-height: 1.55; text-align: left; cursor: pointer; transition: color .25s, transform .25s, opacity .25s; transform-origin: left center; }
+.lyrics-scroll > button:hover { color: var(--text); }
+.lyrics-scroll.synced > button.active { color: var(--text); transform: scale(1.08); }
+.lyrics-scroll.synced > button.active::before { content: ''; width: 4px; height: 4px; margin: 0 10px 4px 0; display: inline-block; border-radius: 50%; background: var(--accent); }
+.lyrics-scroll.plain > button { cursor: default; }
+.lyrics-state { height: 100%; margin-top: -42%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; }
+.lyrics-state svg { margin-bottom: 15px; color: var(--accent); }
+.lyrics-state strong { color: var(--text); font: 700 17px 'Manrope'; }
+.lyrics-state span { max-width: 310px; margin-top: 7px; font-size: 11px; line-height: 1.7; }
+.lyrics-state small { margin-top: 5px; font-size: 9px; }
+
+@media (max-width: 1100px) { .app-shell { grid-template-columns: 190px 1fr; } .album-grid { gap: 12px; } .hero-card { grid-template-columns: 50% 1fr; } .track-head, .track-row { grid-template-columns: 30px minmax(190px,1.5fr) minmax(120px,1fr) 60px 50px 50px; padding: 0 10px; } .now-playing-page-body { gap: 40px; grid-template-columns: minmax(330px,.9fr) minmax(360px,1.1fr); } .now-playing-art { width: min(34vh, 310px); } }
