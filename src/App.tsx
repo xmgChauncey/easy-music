@@ -482,19 +482,35 @@ function App() {
 
   const toggleMiniMode = async () => {
     const nextMiniMode = !miniMode
-    setMiniMode(nextMiniMode)
-    document.documentElement.dataset.mini = String(nextMiniMode)
-    if (!isTauri()) return
+    if (!isTauri()) {
+      setMiniMode(nextMiniMode)
+      document.documentElement.dataset.mini = String(nextMiniMode)
+      return
+    }
     const appWindow = getCurrentWindow()
-    if (nextMiniMode) {
-      await appWindow.setMinSize(null)
-      await appWindow.setSize(new LogicalSize(420, 150))
-      await appWindow.setResizable(false)
-    } else {
-      await appWindow.setResizable(true)
-      await appWindow.setMinSize(new LogicalSize(960, 640))
-      await appWindow.setSize(new LogicalSize(1280, 800))
-      await appWindow.center()
+    try {
+      if (nextMiniMode) {
+        await appWindow.setMinSize(null)
+        await appWindow.setDecorations(false)
+        await appWindow.setAlwaysOnTop(true)
+        await appWindow.setResizable(false)
+        setMiniMode(true)
+        document.documentElement.dataset.mini = 'true'
+        await appWindow.setSize(new LogicalSize(400, 156))
+      } else {
+        await appWindow.setAlwaysOnTop(false)
+        await appWindow.setDecorations(true)
+        await appWindow.setResizable(true)
+        await appWindow.setMinSize(new LogicalSize(960, 640))
+        setMiniMode(false)
+        document.documentElement.dataset.mini = 'false'
+        await appWindow.setSize(new LogicalSize(1280, 800))
+        await appWindow.center()
+      }
+    } catch (error) {
+      setMiniMode(false)
+      document.documentElement.dataset.mini = 'false'
+      setScanError(`切换迷你播放器失败：${String(error)}`)
     }
   }
 
@@ -502,10 +518,12 @@ function App() {
 
   if (miniMode) return <div className="mini-player">
     <audio ref={audio} onTimeUpdate={(event) => setProgress(event.currentTarget.currentTime)} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)} onEnded={() => next()} />
-    <div className="mini-drag" data-tauri-drag-region="deep"><Cover kind={current?.cover || 'ocean'} size="normal"/><div><strong>{current?.title || '暂无播放'}</strong><span>{current?.artist || '请选择歌曲'}</span></div></div>
-    <div className="mini-controls"><button onClick={() => next(-1)} title="上一首"><SkipBack size={17} fill="currentColor"/></button><button className="mini-play" onClick={togglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={18} fill="currentColor"/> : <Play size={18} fill="currentColor"/>}</button><button onClick={() => next()} title="下一首"><SkipForward size={17} fill="currentColor"/></button></div>
-    <div className="mini-timeline"><input type="range" min="0" max={duration || current?.duration || 1} value={progress} onChange={(event) => seekPlayer(Number(event.target.value))} style={{'--value': `${progress / (duration || current?.duration || 1) * 100}%`} as React.CSSProperties}/></div>
-    <button className="mini-expand" onClick={() => void toggleMiniMode()} title="返回主窗口"><Maximize2 size={15}/></button>
+    <div className="mini-content">
+      <div className="mini-drag" data-tauri-drag-region="deep"><strong>{current?.title || '暂无播放'}</strong><span>{current?.artist || '请选择歌曲'} · {current?.album || '本地音乐'}</span></div>
+      <div className="mini-timeline"><input type="range" min="0" max={duration || current?.duration || 1} value={progress} onChange={(event) => seekPlayer(Number(event.target.value))} style={{'--value': `${progress / (duration || current?.duration || 1) * 100}%`} as React.CSSProperties}/><div><span>{formatTime(progress)}</span><span>{formatTime(duration || current?.duration || 0)}</span></div></div>
+      <div className="mini-controls"><button onClick={() => next(-1)} title="上一首"><SkipBack size={16} fill="currentColor"/></button><button className="mini-play" onClick={togglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}</button><button onClick={() => next()} title="下一首"><SkipForward size={16} fill="currentColor"/></button><button onClick={() => changeVolume(state.volume ? 0 : .72)} title={state.volume ? '静音' : '取消静音'}>{state.volume ? <Volume2 size={15}/> : <VolumeX size={15}/>}</button></div>
+    </div>
+    <div className="mini-window-actions"><button onClick={() => void toggleMiniMode()} title="返回主窗口"><Maximize2 size={14}/></button><button onClick={() => void windowAction('close')} title="关闭"><X size={15}/></button></div>
   </div>
 
   return <div className="app-shell">

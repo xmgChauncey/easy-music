@@ -217,20 +217,26 @@ input[type='range']:hover::-webkit-slider-thumb { opacity: 1; }
 .scan-progress span { display: block; height: 100%; min-width: 8%; background: var(--accent); transition: width .2s; }
 @keyframes scan-spin { to { transform: rotate(360deg); } }
 
-.mini-player { position: relative; width: 100vw; height: 100vh; min-width: 0; padding: 17px 17px 24px; display: grid; grid-template-columns: minmax(0, 1fr) auto 28px; grid-template-rows: 1fr 10px; align-items: center; gap: 8px 14px; overflow: hidden; border: 1px solid var(--line); background: color-mix(in srgb, var(--card) 96%, transparent); }
-.mini-drag { min-width: 0; display: flex; align-items: center; gap: 11px; user-select: none; }
-.mini-drag > div:nth-child(2) { min-width: 0; }
+.mini-player { position: relative; width: 100vw; height: 100vh; min-width: 0; padding: 14px 15px 13px 17px; display: grid; grid-template-columns: minmax(0, 1fr) 32px; align-items: center; gap: 12px; overflow: hidden; border: 1px solid var(--line); background: linear-gradient(125deg, color-mix(in srgb, var(--card) 96%, transparent), color-mix(in srgb, var(--panel) 76%, var(--card))); user-select: none; }
+.mini-player::before { content: ''; position: absolute; width: 190px; height: 190px; left: -70px; bottom: -115px; border-radius: 50%; background: var(--accent-soft); filter: blur(20px); opacity: .55; pointer-events: none; }
+.mini-content { position: relative; z-index: 1; min-width: 0; align-self: stretch; padding: 1px 0; display: grid; grid-template-rows: 36px 29px 1fr; }
+.mini-drag { min-width: 0; cursor: grab; }
+.mini-drag:active { cursor: grabbing; }
 .mini-drag strong, .mini-drag span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mini-drag strong { font-size: 12px; }
+.mini-drag strong { font: 700 13px 'Manrope'; }
 .mini-drag span { margin-top: 4px; color: var(--muted); font-size: 9px; }
-.mini-controls { display: flex; align-items: center; gap: 6px; }
-.mini-controls button, .mini-expand { width: 29px; height: 29px; display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--text); background: none; cursor: pointer; }
-.mini-controls .mini-play { width: 36px; height: 36px; color: var(--bg); background: var(--text); }
-.mini-expand { border-radius: 7px; color: var(--muted); }
-.mini-controls button:hover, .mini-expand:hover { background-color: var(--panel); }
-.mini-controls .mini-play:hover { background-color: var(--text); }
-.mini-timeline { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; display: flex; align-items: flex-end; }
-.mini-timeline input { width: 100%; height: 3px; }
+.mini-timeline { min-width: 0; }
+.mini-timeline input { width: 100%; height: 3px; display: block; }
+.mini-timeline > div { margin-top: 5px; display: flex; justify-content: space-between; color: var(--muted); font-size: 8px; font-variant-numeric: tabular-nums; }
+.mini-controls { align-self: end; display: flex; align-items: center; gap: 5px; }
+.mini-controls button, .mini-window-actions button { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--text); background: none; cursor: pointer; }
+.mini-controls button:hover, .mini-window-actions button:hover { background: color-mix(in srgb, var(--card) 72%, transparent); }
+.mini-controls .mini-play { width: 34px; height: 34px; color: var(--bg); background: var(--text); box-shadow: 0 5px 13px rgba(25, 22, 19, .2); }
+.mini-controls .mini-play:hover { background: var(--text); transform: scale(1.03); }
+.mini-controls button:last-child { margin-left: 5px; color: var(--muted); }
+.mini-window-actions { position: relative; z-index: 2; align-self: stretch; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; }
+.mini-window-actions button { border-radius: 7px; color: var(--muted); }
+.mini-window-actions button:last-child:hover { color: white; background: var(--accent); }
 
 .now-playing-page { position: fixed; z-index: 25; inset: 0; isolation: isolate; overflow: hidden; color: var(--text); background: color-mix(in srgb, var(--bg) 94%, #d8cfc2); }
 .now-playing-background { position: absolute; inset: -25%; opacity: .16; filter: blur(90px) saturate(1.25); transform: scale(1.12); pointer-events: none; }
