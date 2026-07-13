@@ -1,0 +1,35 @@
+[package]
+name = "easy-music"
+version = "0.1.0"
+description = "A lightweight local-first desktop music player"
+authors = ["Easy Music contributors"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "easy_music_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.3", features = ["tray-icon"] }
+tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+base64 = "0.22"
+lofty = "0.24"
+notify = "8.2"
+rodio = { version = "0.22", features = ["symphonia-all"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
+walkdir = "2.5"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-global-shortcut = "2"

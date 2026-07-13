@@ -1,59 +1,82 @@
-# Easy Music
+# 轻音乐
 
-轻量、本地优先的桌面音乐播放器 MVP。目前仓库包含可运行的 React + TypeScript 界面原型，重点验证“导入、管理、播放”的核心交互。
+轻量、本地优先的 Windows 桌面音乐播放器 MVP，使用 Tauri 2、React、TypeScript 和 Vite 构建。
 
 ## 已实现
 
-- 歌曲库、收藏、最近播放和示例播放列表
-- 按标题、歌手、专辑即时搜索
-- MP3、FLAC、WAV、AAC、M4A、OGG 文件选择与拖放导入
-- 使用浏览器 Audio API 播放导入的本地音频
-- 播放、暂停、上一首、下一首、进度、音量、静音
-- 随机、列表循环、单曲循环
+- 中文桌面播放器界面
+- 使用 Windows 原生对话框选择音乐目录
+- Rust 后台递归扫描 MP3、FLAC、WAV、AAC、M4A、OGG
+- 使用 `lofty` 读取标题、歌手、专辑、时长和内嵌封面
+- 使用 SQLite 持久保存音乐索引，并按文件大小和修改时间增量更新
+- 扫描进度实时显示，损坏或缺少标签的文件会安全回退
+- 使用 `notify` 递归监听音乐目录变化，并防抖触发增量扫描
+- 使用 `rodio + symphonia` 在 Rust 后端播放本地音频
+- 原生播放支持暂停、恢复、进度跳转、音量和播放结束事件
+- 收藏、播放队列、当前歌曲、进度、音量和播放模式保存到 SQLite
+- 启动时恢复上次播放状态，并从保存位置继续播放
+- Windows 系统托盘提供打开、播放/暂停、上一首、下一首和退出菜单
+- 支持播放/暂停、上一首和下一首媒体快捷键
+- 关闭主窗口时进入托盘并继续运行
+- 播放列表保存到 SQLite，支持创建、重命名、删除、歌曲增删和拖放排序
+- “恢复播放状态”和“关闭时进入托盘”可在设置中实时开关
+- 主窗口最小化、最大化和关闭按钮调用 Windows 原生窗口能力
+- 可切换为紧凑迷你播放器，并恢复到主窗口
+- 歌曲库搜索、收藏和最近播放
+- 播放、暂停、切歌、进度、音量和静音
+- 随机播放、列表循环和单曲循环
 - 播放队列查看和移除
-- 双击歌曲播放
-- 浅色/深色主题
-- 本地持久化收藏、最近播放、音量与播放模式
-- 空列表、导入和设置状态
+- 浅色与深色主题
+- 播放偏好与收藏状态本地持久化
+- Tauri 2 Windows 原生容器
 
-示例歌曲仅用于首次启动时展示界面，不包含音频文件。点击示例歌曲的播放按钮会引导导入真实本地音乐。
+Tauri 原生版本由 Rust 持有播放真值；浏览器开发模式保留 `HTMLAudioElement` 作为降级预览实现。
 
-## 本地运行
+音乐数据库默认存储在：
+
+```text
+%APPDATA%/com.easymusic.player/music-library.sqlite3
+```
+
+## 开发运行
 
 ```powershell
 npm install
+npm run tauri dev
+```
+
+仅启动浏览器前端：
+
+```powershell
 npm run dev
 ```
 
-生产构建和测试：
+## 构建与测试
 
 ```powershell
-npm run build
 npm test
+npm run build
+npm run tauri build -- --no-bundle
 ```
 
-## Tauri 原生层接入边界
-
-当前开发环境没有 Rust/Cargo，因此没有提交一个无法验证的 `src-tauri` 壳。接入 Tauri 2 时，前端保持现有页面和状态交互，文件与播放真值迁移到以下命令：
+Windows Release 程序生成在：
 
 ```text
-library_scan(folders)          -> scan_id
-library_scan_progress(scan_id) -> progress event
-library_search(query, filters) -> Track[]
-library_add_paths(paths)       -> Track[]
-player_load(track_id)
-player_play / pause / seek / set_volume
-queue_get / add / remove / reorder
-playlist_create / rename / delete / add_tracks / remove_tracks
-settings_get / settings_patch
+src-tauri/target/release/easy-music.exe
 ```
 
-Rust 后端建议按 `LibraryService`、`MetadataService`、`PlayerService`、`PlaylistService` 和 SQLite Repository 拆分。前端的 `HTMLAudioElement` 只作为当前可运行原型的播放实现；接入 `rodio + symphonia` 后，播放状态由 Rust 事件单向同步到 Zustand，避免形成两套播放真值。
+生成 MSI/NSIS 安装包：
 
-## 下一阶段
+```powershell
+npm run tauri build
+```
 
-1. 安装 Rust 与 Tauri 2 CLI，生成并验证 Windows 原生容器。
-2. 建立 SQLite schema 和迁移，替换示例数据及 localStorage。
-3. 使用 `lofty` 后台解析元数据和封面，并用 `notify` 做增量扫描。
-4. 用 `rodio + symphonia` 替换浏览器音频，优先验证 seek 精度和 AAC/M4A 兼容性。
-5. 接入托盘、媒体键、窗口行为和播放状态恢复。
+安装包位于 `src-tauri/target/release/bundle/`。
+
+## 后续规划
+
+- Windows SMTC 锁屏媒体信息和系统音量浮层联动
+- 扫描目录管理与移除
+- 播放队列拖放排序
+- 最近播放历史迁移到 SQLite
+- 音乐库缓存清理与数据位置打开按钮

@@ -13,7 +13,7 @@ export type Track = {
   valid?: boolean
 }
 
-export type View = 'discover' | 'songs' | 'albums' | 'artists' | 'favorites' | 'recent' | 'settings'
+export type View = 'discover' | 'songs' | 'albums' | 'artists' | 'favorites' | 'recent' | 'playlist' | 'settings'
 export type RepeatMode = 'off' | 'all' | 'one'
 
 export type Playlist = { id: string; name: string; trackIds: string[] }
