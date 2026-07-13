@@ -148,6 +148,7 @@ input[type='range']:hover::-webkit-slider-thumb { opacity: 1; }
 .player-tools { justify-self: end; display: flex; align-items: center; gap: 8px; }
 .player-tools button { width: 26px; height: 28px; }
 .volume { width: 76px; }
+.volume-percent { width: 31px; display: inline-block; color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; text-align: right; }
 .queue-panel { position: fixed; z-index: 15; right: 14px; bottom: 95px; width: 350px; max-height: calc(100vh - 125px); padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
 .panel-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 14px; }
 .panel-header h2 { font: 700 17px 'Manrope'; }
@@ -273,7 +274,7 @@ input[type='range']:hover::-webkit-slider-thumb { opacity: 1; }
 .now-playing-controls button.selected { color: var(--accent); }
 .now-playing-controls button sup { position: absolute; top: 2px; right: 0; font-size: 7px; }
 .now-playing-controls .now-playing-main-play { width: 53px; height: 53px; border-radius: 50%; color: var(--bg); background: var(--text); box-shadow: 0 9px 22px rgba(28, 25, 22, .22); }
-.now-playing-volume { width: 145px; margin-top: 10px; display: grid; grid-template-columns: 25px 1fr; align-items: center; gap: 8px; }
+.now-playing-volume { width: 185px; margin-top: 10px; display: grid; grid-template-columns: 25px 1fr 31px; align-items: center; gap: 8px; }
 .now-playing-volume button { width: 25px; height: 25px; color: var(--muted); }
 .now-playing-volume input { width: 100%; }
 .lyrics-column { min-width: 0; height: min(680px, calc(100vh - 130px)); display: flex; flex-direction: column; }
