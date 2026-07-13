@@ -100,6 +100,27 @@ h1, h2, h3, p { margin: 0; }
 .album-detail-copy p { margin-top: 7px; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .album-play-all { height: 37px; padding: 0 14px; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 9px; color: var(--bg); background: var(--text); font-size: 11px; font-weight: 600; cursor: pointer; }
 .album-detail .track-table { margin-top: 20px; }
+.artist-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 185px)); justify-content: start; gap: 28px 24px; }
+.artist-card { min-width: 0; padding: 12px 10px 14px; border: 0; border-radius: 14px; color: var(--text); background: none; text-align: center; cursor: pointer; transition: background .18s, transform .18s; }
+.artist-card:hover { background: color-mix(in srgb, var(--panel) 70%, transparent); transform: translateY(-2px); }
+.artist-avatar { position: relative; width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: 50%; box-shadow: 0 8px 22px rgba(34, 30, 27, .15); }
+.artist-avatar .cover { width: 100%; height: 100%; border-radius: 50%; }
+.artist-open { position: absolute; right: 11px; bottom: 11px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; color: #302e2a; background: rgba(250, 248, 244, .94); opacity: 0; transform: translateY(5px); transition: .18s; }
+.artist-card:hover .artist-open { opacity: 1; transform: none; }
+.artist-card > strong, .artist-card > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artist-card > strong { margin-top: 12px; font-size: 13px; }
+.artist-card > span { margin-top: 4px; color: var(--muted); font-size: 10px; }
+.artist-detail-header { min-height: 174px; padding: 15px 18px; display: grid; grid-template-columns: 34px 144px minmax(0, 1fr) auto; align-items: center; gap: 17px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--panel) 68%, transparent); }
+.artist-back { width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; color: var(--muted); background: var(--card); cursor: pointer; }
+.artist-back:hover { color: var(--text); }
+.artist-detail-avatar { width: 144px; height: 144px; overflow: hidden; border-radius: 50%; box-shadow: 0 8px 22px rgba(34, 30, 27, .16); }
+.artist-detail-avatar .cover { width: 100%; height: 100%; border-radius: 50%; }
+.artist-detail-copy { min-width: 0; }
+.artist-detail-copy > span { color: var(--accent); font-size: 9px; font-weight: 700; letter-spacing: .14em; }
+.artist-detail-copy h2 { margin-top: 8px; overflow: hidden; font: 700 clamp(21px, 2.7vw, 30px) 'Manrope'; text-overflow: ellipsis; white-space: nowrap; }
+.artist-detail-copy p { margin-top: 7px; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.artist-play-all { height: 37px; padding: 0 14px; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 9px; color: var(--bg); background: var(--text); font-size: 11px; font-weight: 600; cursor: pointer; }
+.artist-detail .track-table { margin-top: 20px; }
 .cover { flex: none; border-radius: 7px; overflow: hidden; position: relative; isolation: isolate; background: #8aa0a8; }
 .cover img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .cover::before, .cover::after { content: ''; position: absolute; z-index: -1; }
