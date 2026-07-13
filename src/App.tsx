@@ -77,6 +77,11 @@ function App() {
   const audio = useRef<HTMLAudioElement>(null)
   const current = state.tracks.find((track) => track.id === state.currentId) || state.tracks[0]
 
+  const setFolderInput = (node: HTMLInputElement | null) => {
+    fileInput.current = node
+    if (node) node.setAttribute('webkitdirectory', '')
+  }
+
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('easy-theme', theme) }, [theme])
   useEffect(() => { if (audio.current) audio.current.volume = state.volume }, [state.volume])
   useEffect(() => {
@@ -120,7 +125,7 @@ function App() {
     const accepted = Array.from(files).filter((file) => /\.(mp3|flac|wav|aac|m4a|ogg)$/i.test(file.name))
     const added = accepted.map((file, index): Track => ({
       id: `local-${file.lastModified}-${file.size}-${index}`,
-      title: file.name.replace(/\.[^.]+$/, '').replace(/^\d+[\s._-]*/, ''),
+      title: file.name.replace(/\.[^.]+$/, ''),
       artist: '未知歌手', album: '本地文件', duration: 0,
       format: file.name.split('.').pop()?.toUpperCase() || 'AUDIO', cover: ['ocean', 'flower', 'sunset', 'blue'][index % 4],
       url: URL.createObjectURL(file), path: file.name, valid: true,
@@ -153,10 +158,10 @@ function App() {
     <main className="main">
       <header><div className="history"><button title="后退"><ChevronLeft size={19}/></button><button title="前进" disabled><ChevronRight size={19}/></button></div><label className="search"><Search size={17}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索歌曲、歌手或专辑…"/><kbd>⌘ K</kbd></label><div className="window-actions"><button title="最小化"><Minimize2 size={14}/></button><button title="最大化"><Maximize2 size={14}/></button><button title="关闭"><X size={15}/></button></div></header>
       <section className="content">
-        <div className="page-heading"><div><h1>{pageTitle}</h1><p>{view === 'discover' ? '继续享受上次的音乐时光。' : `本地音乐库中共 ${filtered.length} 项`}</p></div><button className="import-button" onClick={() => setImportOpen(true)}><FolderPlus size={17}/>添加音乐</button></div>
+        <div className="page-heading"><div><h1>{pageTitle}</h1><p>{view === 'discover' ? '继续享受上次的音乐时光。' : `本地音乐库中共 ${filtered.length} 项`}</p></div><button className="import-button" onClick={() => setImportOpen(true)}><FolderPlus size={17}/>选择目录</button></div>
 
         {view === 'discover' && <>
-          <section className="hero-card"><div className="hero-art"><div className="vinyl"><div/></div><div className="hero-cover"><Cover kind={current?.cover || 'ocean'} size="large"/></div></div><div className="hero-copy"><span className="eyebrow">继续收听</span><h2>{current?.title}</h2><p>{current?.artist} · {current?.album}</p><div><button className="round-play" title={playing ? '暂停' : '播放'} onClick={togglePlay}>{playing ? <Pause size={20} fill="currentColor"/> : <Play size={20} fill="currentColor"/>}</button><button className="soft-button" title="收藏" onClick={() => current && state.toggleFavorite(current.id)}><Heart size={17} fill={current && state.favorites.includes(current.id) ? 'currentColor' : 'none'}/></button><button className="soft-button" title="更多"><MoreHorizontal size={18}/></button></div></div></section>
+          <section className="hero-card"><div className="hero-art"><div className="vinyl"><div/></div><div className="hero-cover"><Cover kind={current?.cover || 'ocean'} size="large"/></div></div><div className="hero-copy"><span className="eyebrow">继续收听</span><h2>{current?.title || ''}</h2><p>{current?.artist} · {current?.album}</p><div><button className="round-play" title={playing ? '暂停' : '播放'} onClick={togglePlay}>{playing ? <Pause size={20} fill="currentColor"/> : <Play size={20} fill="currentColor"/>}</button><button className="soft-button" title="收藏" onClick={() => current && state.toggleFavorite(current.id)}><Heart size={17} fill={current && state.favorites.includes(current.id) ? 'currentColor' : 'none'}/></button><button className="soft-button" title="更多"><MoreHorizontal size={18}/></button></div></div></section>
           <div className="section-title"><h2>最近添加</h2><button onClick={() => setView('songs')}>查看全部 <ChevronRight size={15}/></button></div>
           <div className="album-grid">{state.tracks.slice(0, 4).map((track) => <button className="album-card" key={track.id} onDoubleClick={() => playTrack(track)}><div className="album-cover"><Cover kind={track.cover} size="large"/><span className="album-play" onClick={() => playTrack(track)}><Play size={18} fill="currentColor"/></span></div><strong>{track.album}</strong><span>{track.artist}</span></button>)}</div>
           <div className="section-title"><h2>静谧时刻</h2><button>查看更多 <ChevronRight size={15}/></button></div>
@@ -174,7 +179,7 @@ function App() {
     </footer>
 
     {queueOpen && <QueuePanel tracks={state.queue.map((id) => state.tracks.find((track) => track.id === id)).filter(Boolean) as Track[]} currentId={current?.id} onClose={() => setQueueOpen(false)} onPlay={playTrack} onRemove={(id) => state.setQueue(state.queue.filter((item) => item !== id))}/>} 
-    {importOpen && <Modal title="添加音乐" onClose={() => setImportOpen(false)}><div className="drop-zone" onClick={() => fileInput.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); importFiles(e.dataTransfer.files) }}><div className="drop-icon"><FolderPlus size={26}/></div><h3>选择音乐文件</h3><p>也可以将文件拖放到这里</p><small>支持 MP3、FLAC、WAV、AAC、M4A 和 OGG</small><button>选择文件</button></div><input ref={fileInput} type="file" multiple accept="audio/*,.flac,.m4a,.ogg" hidden onChange={(e) => importFiles(e.target.files)}/></Modal>}
+    {importOpen && <Modal title="选择音乐目录" onClose={() => setImportOpen(false)}><div className="drop-zone" onClick={() => fileInput.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); importFiles(e.dataTransfer.files) }}><div className="drop-icon"><FolderPlus size={26}/></div><h3>选择音乐文件夹</h3><p>也可以将文件夹拖放到这里</p><small>将扫描其中的 MP3、FLAC、WAV、AAC、M4A 和 OGG</small><button>选择目录</button></div><input ref={setFolderInput} type="file" multiple accept="audio/*,.flac,.m4a,.ogg" hidden onChange={(e) => importFiles(e.target.files)}/></Modal>}
     {settingsOpen && <Modal title="设置" onClose={() => setSettingsOpen(false)}><SettingsPanel theme={theme} setTheme={setTheme} onImport={() => { setSettingsOpen(false); setImportOpen(true) }}/></Modal>}
   </div>
 }
