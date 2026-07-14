@@ -32,7 +32,7 @@ pub fn set_app_settings(
 }
 
 pub fn setup_tray<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "打开轻音乐", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "打开泡面音乐", true, None::<&str>)?;
     let play_pause = MenuItem::with_id(app, "play-pause", "播放 / 暂停", true, None::<&str>)?;
     let previous = MenuItem::with_id(app, "previous", "上一首", true, None::<&str>)?;
     let next = MenuItem::with_id(app, "next", "下一首", true, None::<&str>)?;
@@ -45,7 +45,7 @@ pub fn setup_tray<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().expect("default icon").clone())
-        .tooltip("轻音乐")
+        .tooltip("泡面音乐")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {

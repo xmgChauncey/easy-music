@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "轻音乐",
+  "productName": "泡面音乐",
   "version": "0.1.0",
   "identifier": "com.easymusic.player",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "轻音乐",
+        "title": "泡面音乐",
         "width": 1280,
         "height": 800,
         "minWidth": 960,

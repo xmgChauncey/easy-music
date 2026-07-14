@@ -1,4 +1,4 @@
-# 轻音乐
+# 泡面音乐
 
 轻量、本地优先的 Windows 桌面音乐播放器 MVP，使用 Tauri 2、React、TypeScript 和 Vite 构建。
 

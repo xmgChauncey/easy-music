@@ -12,7 +12,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid color-mix(in srgb
 .app-shell { display: grid; grid-template: 1fr 82px / 218px 1fr; width: 100vw; height: 100vh; background: var(--bg); }
 .sidebar { grid-row: 1; padding: 25px 14px 14px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 29px; font: 700 17px 'Manrope'; }
-.brand-mark { width: 31px; height: 31px; border-radius: 9px; display: grid; place-items: center; color: white; background: var(--accent); box-shadow: 0 5px 14px rgba(216,90,68,.25); }
+.brand-mark { width: 31px; height: 31px; border-radius: 9px; display: grid; place-items: center; overflow: hidden; background: color-mix(in srgb, var(--card) 86%, var(--accent-soft)); box-shadow: 0 5px 14px rgba(216,90,68,.25); }
+.brand-mark img { width: 27px; height: 27px; object-fit: contain; }
 .side-label { padding: 0 11px 9px; font-size: 10px; font-weight: 700; letter-spacing: .12em; color: var(--muted); }
 .section-gap { margin-top: 22px; }
 .playlist-label { display: flex; justify-content: space-between; align-items: center; }
