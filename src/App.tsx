@@ -5,7 +5,7 @@ import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   Album, AudioLines, ChevronDown, ChevronLeft, ChevronRight, Disc3, FolderPlus,
-  Heart, Home, ListEnd, ListMusic, Maximize2, Minimize2, MoreHorizontal, Music2, Pause,
+  Heart, Home, ListEnd, ListMusic, Maximize2, MoreHorizontal, Music2, Pause,
   Play, Plus, Repeat, Search, Settings, Shuffle, SkipBack, SkipForward, SlidersHorizontal,
   Sparkles, Star, Trash2, UserRound, Volume2, VolumeX, X,
 } from 'lucide-react'
@@ -589,7 +589,7 @@ function App() {
     </aside>
 
     <main className="main">
-      <header><div className="history"><button title="后退"><ChevronLeft size={19}/></button><button title="前进" disabled><ChevronRight size={19}/></button></div><label className="search"><Search size={17}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索歌曲、歌手或专辑…"/><kbd>Ctrl K</kbd></label><div className="window-actions"><button title="最小化" onClick={() => void windowAction('minimize')}><Minimize2 size={14}/></button><button title="最大化" onClick={() => void windowAction('maximize')}><Maximize2 size={14}/></button><button title="关闭" onClick={() => void windowAction('close')}><X size={15}/></button></div></header>
+      <header><div className="history"><button title="后退"><ChevronLeft size={19}/></button><button title="前进" disabled><ChevronRight size={19}/></button></div><label className="search"><Search size={17}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索歌曲、歌手或专辑…"/><kbd>Ctrl K</kbd></label></header>
       <section className="content">
         <div className="page-heading"><div><h1>{pageTitle}</h1><p>{view === 'discover' ? '继续享受上次的音乐时光。' : view === 'playlist' ? `播放列表中共 ${filtered.length} 首歌曲，可拖动排序` : view === 'albums' ? `本地音乐库中共 ${albumCount} 张专辑` : view === 'artists' ? `本地音乐库中共 ${artistCount} 位歌手` : `本地音乐库中共 ${filtered.length} 项`}</p></div><div className="heading-actions">{view === 'playlist' && activePlaylist && <><button className="outline-button" onClick={() => openPlaylistDialog('rename')}>重命名</button><button className="outline-button danger" onClick={() => openPlaylistDialog('delete')}><Trash2 size={14}/>删除</button></>}<button className="import-button" disabled={scanning} onClick={chooseMusicFolder}><FolderPlus size={17}/>{scanning ? '扫描中…' : '选择目录'}</button></div></div>
         {scanError && <div className="scan-error"><span>{scanError}</span><button onClick={() => setScanError('')}><X size={15}/></button></div>}

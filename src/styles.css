@@ -36,15 +36,13 @@ nav button.active { font-weight: 600; box-shadow: 0 1px 1px rgba(0,0,0,.03); }
 .main { grid-column: 2; grid-row: 1; min-width: 0; overflow: hidden; }
 header { height: 68px; border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 29px; gap: 17px; background: color-mix(in srgb, var(--bg) 92%, transparent); }
 .history { display: flex; gap: 3px; }
-header button, .window-actions button, .now-playing button, .transport button, .player-tools button, .panel-header button, .row-actions button, .modal-title button { background: none; border: 0; cursor: pointer; display: grid; place-items: center; color: var(--muted); }
+header button, .now-playing button, .transport button, .player-tools button, .panel-header button, .row-actions button, .modal-title button { background: none; border: 0; cursor: pointer; display: grid; place-items: center; color: var(--muted); }
 .history button { width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: var(--text); cursor: pointer; }
 .history button:disabled { opacity: .3; }
 .search { margin-left: 7px; width: min(415px, 44vw); height: 36px; display: flex; align-items: center; gap: 9px; border: 1px solid var(--line); background: var(--card); padding: 0 10px; border-radius: 9px; color: var(--muted); }
 .search input { min-width: 0; flex: 1; background: none; border: 0; outline: 0; color: var(--text); font-size: 12px; }
 .search input::placeholder { color: var(--muted); }
 kbd { font: 500 9px 'DM Sans'; padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
-.window-actions { margin-left: auto; align-self: stretch; display: flex; align-items: center; gap: 10px; }
-.window-actions button { width: 22px; height: 26px; }
 .content { height: calc(100vh - 150px); overflow-y: auto; padding: 35px clamp(28px, 4vw, 56px) 55px; }
 .content::-webkit-scrollbar { width: 7px; }
 .content::-webkit-scrollbar-thumb { border-radius: 8px; background: var(--line); }
