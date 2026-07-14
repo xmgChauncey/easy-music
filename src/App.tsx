@@ -27,6 +27,7 @@ type PlayerState = {
   favorites: string[]
   recent: string[]
   playlists: Playlist[]
+  equalizer: EqualizerSettings
   setCurrent: (id: string) => void
   setVolume: (volume: number) => void
   toggleFavorite: (id: string) => void
@@ -36,8 +37,22 @@ type PlayerState = {
   setFavorites: (favorites: string[]) => void
   setShuffle: (shuffle: boolean) => void
   setPlaylists: (playlists: Playlist[]) => void
+  setEqualizer: (equalizer: EqualizerSettings) => void
   toggleShuffle: () => void
 }
+
+type EqualizerPreset = 'flat' | 'bass' | 'vocal' | 'bright' | 'custom'
+type EqualizerSettings = { preset: EqualizerPreset; bass: number; mid: number; treble: number }
+
+const equalizerPresets: Record<Exclude<EqualizerPreset, 'custom'>, EqualizerSettings> = {
+  flat: { preset: 'flat', bass: 0, mid: 0, treble: 0 },
+  bass: { preset: 'bass', bass: 7, mid: 1, treble: -1 },
+  vocal: { preset: 'vocal', bass: -2, mid: 6, treble: 2 },
+  bright: { preset: 'bright', bass: -1, mid: 2, treble: 7 },
+}
+
+const equalizerOutputGain = ({ bass, mid, treble }: EqualizerSettings) =>
+  1 / Math.max(1, 10 ** (bass / 20), 10 ** (mid / 20), 10 ** (treble / 20))
 
 const usePlayer = create<PlayerState>()(persist((set) => ({
   tracks: demoTracks,
@@ -52,6 +67,7 @@ const usePlayer = create<PlayerState>()(persist((set) => ({
     { id: 'morning', name: '清晨舒缓', trackIds: ['1', '2', '4'] },
     { id: 'road', name: '公路旅行', trackIds: ['3', '5', '7'] },
   ],
+  equalizer: equalizerPresets.flat,
   setCurrent: (currentId) => set((state) => ({ currentId, recent: [currentId, ...state.recent.filter((id) => id !== currentId)].slice(0, 30) })),
   setVolume: (volume) => set({ volume }),
   toggleFavorite: (id) => set((state) => ({ favorites: state.favorites.includes(id) ? state.favorites.filter((item) => item !== id) : [...state.favorites, id] })),
@@ -61,8 +77,9 @@ const usePlayer = create<PlayerState>()(persist((set) => ({
   setFavorites: (favorites) => set({ favorites }),
   setShuffle: (shuffle) => set({ shuffle }),
   setPlaylists: (playlists) => set({ playlists }),
+  setEqualizer: (equalizer) => set({ equalizer }),
   toggleShuffle: () => set((state) => ({ shuffle: !state.shuffle })),
-}), { name: 'easy-music-state', partialize: (state) => ({ currentId: state.currentId, volume: state.volume, repeat: state.repeat, shuffle: state.shuffle, favorites: state.favorites, recent: state.recent, playlists: state.playlists }) }))
+}), { name: 'easy-music-state', partialize: (state) => ({ currentId: state.currentId, volume: state.volume, repeat: state.repeat, shuffle: state.shuffle, favorites: state.favorites, recent: state.recent, playlists: state.playlists, equalizer: state.equalizer }) }))
 
 const nav = [
   { id: 'discover', label: '发现', icon: Home },
@@ -92,6 +109,7 @@ function App() {
   const [queueOpen, setQueueOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [effectsOpen, setEffectsOpen] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState<ScanProgress>({ processed: 0, total: 0, currentPath: '' })
   const [scanError, setScanError] = useState('')
@@ -115,6 +133,8 @@ function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('easy-theme') as 'light' | 'dark') || 'light')
   const fileInput = useRef<HTMLInputElement>(null)
   const audio = useRef<HTMLAudioElement>(null)
+  const audioContext = useRef<AudioContext | null>(null)
+  const browserEqualizer = useRef<{ bass: BiquadFilterNode; mid: BiquadFilterNode; treble: BiquadFilterNode; output: GainNode } | null>(null)
   const endedTrack = useRef<string | null>(null)
   const mediaAction = useRef<(action: string) => void>(() => undefined)
   const resumePlayback = useRef<{ trackId: string; position: number } | null>(null)
@@ -127,8 +147,47 @@ function App() {
     if (node) node.setAttribute('webkitdirectory', '')
   }
 
+  const ensureBrowserEqualizer = () => {
+    if (isTauri() || !audio.current) return
+    if (!audioContext.current || !browserEqualizer.current) {
+      const context = new AudioContext()
+      const source = context.createMediaElementSource(audio.current)
+      const bass = context.createBiquadFilter()
+      const mid = context.createBiquadFilter()
+      const treble = context.createBiquadFilter()
+      const output = context.createGain()
+      bass.type = 'lowshelf'
+      bass.frequency.value = 200
+      mid.type = 'peaking'
+      mid.frequency.value = 1_000
+      mid.Q.value = .8
+      treble.type = 'highshelf'
+      treble.frequency.value = 4_000
+      source.connect(bass).connect(mid).connect(treble).connect(output).connect(context.destination)
+      audioContext.current = context
+      browserEqualizer.current = { bass, mid, treble, output }
+    }
+    const filters = browserEqualizer.current
+    filters.bass.gain.value = state.equalizer.bass
+    filters.mid.gain.value = state.equalizer.mid
+    filters.treble.gain.value = state.equalizer.treble
+    filters.output.gain.value = equalizerOutputGain(state.equalizer)
+    if (audioContext.current.state === 'suspended') void audioContext.current.resume()
+  }
+
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('easy-theme', theme) }, [theme])
   useEffect(() => { if (!isTauri() && audio.current) audio.current.volume = state.volume }, [state.volume])
+  useEffect(() => {
+    const { bass, mid, treble } = state.equalizer
+    if (isTauri()) {
+      void invoke('player_set_equalizer', { bass, mid, treble }).catch((error) => setScanError(`音效调整失败：${String(error)}`))
+    } else if (browserEqualizer.current) {
+      browserEqualizer.current.bass.gain.value = bass
+      browserEqualizer.current.mid.gain.value = mid
+      browserEqualizer.current.treble.gain.value = treble
+      browserEqualizer.current.output.gain.value = equalizerOutputGain(state.equalizer)
+    }
+  }, [state.equalizer.bass, state.equalizer.mid, state.equalizer.treble])
   useEffect(() => {
     if (!nowPlayingOpen) return
     if (!isTauri() || !current?.path) {
@@ -245,7 +304,14 @@ function App() {
       endedTrack.current = null
       setProgress(0)
       setPlaying(true)
-      void invoke<NativePlayerState>('player_load', { path: track.path, trackId: track.id, volume: state.volume })
+      void invoke<NativePlayerState>('player_load', {
+        path: track.path,
+        trackId: track.id,
+        volume: state.volume,
+        bass: state.equalizer.bass,
+        mid: state.equalizer.mid,
+        treble: state.equalizer.treble,
+      })
         .then(async (snapshot) => {
           const resume = resumePlayback.current
           if (resume?.trackId === track.id) {
@@ -259,6 +325,7 @@ function App() {
       return
     }
     if (!track.url) { setPlaying(false); setProgress(0); return }
+    ensureBrowserEqualizer()
     setPlaying(true)
     setTimeout(() => audio.current?.play().catch(() => setPlaying(false)), 0)
   }
@@ -273,7 +340,10 @@ function App() {
     }
     if (!current?.url) { setImportOpen(true); return }
     if (playing) audio.current?.pause()
-    else audio.current?.play().catch(() => setPlaying(false))
+    else {
+      ensureBrowserEqualizer()
+      audio.current?.play().catch(() => setPlaying(false))
+    }
     setPlaying(!playing)
   }
 
@@ -361,6 +431,14 @@ function App() {
   const changeVolume = (value: number) => {
     state.setVolume(value)
     if (isTauri()) void invoke<NativePlayerState>('player_set_volume', { volume: value }).then(setNativePlayer).catch(() => undefined)
+  }
+
+  const selectEqualizerPreset = (preset: Exclude<EqualizerPreset, 'custom'>) => {
+    state.setEqualizer({ ...equalizerPresets[preset] })
+  }
+
+  const changeEqualizerBand = (band: 'bass' | 'mid' | 'treble', value: number) => {
+    state.setEqualizer({ ...state.equalizer, preset: 'custom', [band]: value })
   }
 
   const toggleFavorite = (trackId: string) => {
@@ -604,7 +682,7 @@ function App() {
         {view === 'albums' && <AlbumBrowser tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={setAddToPlaylistTrack}/>}
         {view === 'artists' && <ArtistBrowser tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={setAddToPlaylistTrack}/>}
         {view !== 'discover' && view !== 'settings' && view !== 'albums' && view !== 'artists' && <TrackTable tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={view === 'playlist' ? undefined : setAddToPlaylistTrack} onRemove={view === 'playlist' ? removeTrackFromPlaylist : undefined} onReorder={view === 'playlist' ? reorderActivePlaylist : undefined}/>}
-        {view === 'settings' && <SettingsPanel theme={theme} setTheme={setTheme} onImport={chooseMusicFolder} closeToTray={closeToTray} restorePlayback={restorePlayback} onSettingsChange={updateAppSettings} />}
+        {view === 'settings' && <SettingsPanel theme={theme} setTheme={setTheme} onImport={chooseMusicFolder} onOpenEffects={() => setEffectsOpen(true)} closeToTray={closeToTray} restorePlayback={restorePlayback} onSettingsChange={updateAppSettings} />}
       </section>
     </main>
 
@@ -632,12 +710,13 @@ function App() {
     <footer className="player-bar">
       <div className="now-playing"><button className="now-playing-info" title="打开正在播放" onClick={() => setNowPlayingOpen(true)}><Cover kind={current?.cover || 'ocean'} size="normal"/><div><strong>{current?.title || '暂无播放'}</strong><span>{current?.artist || '请选择歌曲'}</span></div></button><button title="收藏" onClick={() => current && toggleFavorite(current.id)}><Heart size={17} fill={current && state.favorites.includes(current.id) ? 'currentColor' : 'none'}/></button></div>
       <div className="transport"><div className="transport-buttons"><PlaybackModeButton mode={playbackMode} onClick={cyclePlaybackMode} size={16}/><button onClick={() => next(-1)} title="上一首"><SkipBack size={19} fill="currentColor"/></button><button className="main-play" onClick={togglePlay} title={playing ? '暂停' : '播放'}>{playing ? <Pause size={19} fill="currentColor"/> : <Play size={19} fill="currentColor"/>}</button><button onClick={() => next()} title="下一首"><SkipForward size={19} fill="currentColor"/></button></div><div className="timeline"><span>{formatTime(progress)}</span><input type="range" min="0" max={duration || current?.duration || 1} value={progress} onChange={(e) => seekPlayer(Number(e.target.value))} style={{'--value': `${progress / (duration || current?.duration || 1) * 100}%`} as React.CSSProperties}/><span>{formatTime(duration || current?.duration || 0)}</span></div></div>
-      <div className="player-tools"><button onClick={() => setQueueOpen(!queueOpen)} className={queueOpen ? 'selected' : ''} title="播放队列"><ListMusic size={18}/></button><button onClick={() => changeVolume(state.volume ? 0 : .72)} title={state.volume ? '静音' : '取消静音'}>{state.volume ? <Volume2 size={18}/> : <VolumeX size={18}/>}</button><input className="volume" aria-label="音量" type="range" min="0" max="1" step=".01" value={state.volume} onChange={(e) => changeVolume(Number(e.target.value))} style={{'--value': `${state.volume * 100}%`} as React.CSSProperties}/><span className="volume-percent">{Math.round(state.volume * 100)}%</span><button onClick={() => setNowPlayingOpen(true)} title="打开正在播放"><Maximize2 size={16}/></button><button onClick={() => void toggleMiniMode()} title="迷你播放器"><ChevronDown size={17}/></button></div>
+      <div className="player-tools"><button onClick={() => setQueueOpen(!queueOpen)} className={queueOpen ? 'selected' : ''} title="播放队列"><ListMusic size={18}/></button><button onClick={() => setEffectsOpen(true)} className={effectsOpen ? 'selected' : ''} title={`音效：${state.equalizer.preset === 'custom' ? '自定义' : { flat: '原声', bass: '低音', vocal: '人声', bright: '明亮' }[state.equalizer.preset]}`}><SlidersHorizontal size={17}/></button><button onClick={() => changeVolume(state.volume ? 0 : .72)} title={state.volume ? '静音' : '取消静音'}>{state.volume ? <Volume2 size={18}/> : <VolumeX size={18}/>}</button><input className="volume" aria-label="音量" type="range" min="0" max="1" step=".01" value={state.volume} onChange={(e) => changeVolume(Number(e.target.value))} style={{'--value': `${state.volume * 100}%`} as React.CSSProperties}/><span className="volume-percent">{Math.round(state.volume * 100)}%</span><button onClick={() => setNowPlayingOpen(true)} title="打开正在播放"><Maximize2 size={16}/></button><button onClick={() => void toggleMiniMode()} title="迷你播放器"><ChevronDown size={17}/></button></div>
     </footer>
 
     {queueOpen && <QueuePanel tracks={state.queue.map((id) => state.tracks.find((track) => track.id === id)).filter(Boolean) as Track[]} currentId={current?.id} onClose={() => setQueueOpen(false)} onPlay={playTrack} onRemove={(id) => state.setQueue(state.queue.filter((item) => item !== id))}/>} 
     {importOpen && <Modal title="选择音乐目录" onClose={() => setImportOpen(false)}><div className="drop-zone" onClick={() => fileInput.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); importFiles(e.dataTransfer.files) }}><div className="drop-icon"><FolderPlus size={26}/></div><h3>选择音乐文件夹</h3><p>也可以将文件夹拖放到这里</p><small>将扫描其中的 MP3、FLAC、WAV、AAC、M4A 和 OGG</small><button>选择目录</button></div><input ref={setFolderInput} type="file" multiple accept="audio/*,.flac,.m4a,.ogg" hidden onChange={(e) => importFiles(e.target.files)}/></Modal>}
-    {settingsOpen && <Modal title="设置" onClose={() => setSettingsOpen(false)}><SettingsPanel theme={theme} setTheme={setTheme} onImport={() => { setSettingsOpen(false); void chooseMusicFolder() }} closeToTray={closeToTray} restorePlayback={restorePlayback} onSettingsChange={updateAppSettings}/></Modal>}
+    {settingsOpen && <Modal title="设置" onClose={() => setSettingsOpen(false)}><SettingsPanel theme={theme} setTheme={setTheme} onImport={() => { setSettingsOpen(false); void chooseMusicFolder() }} onOpenEffects={() => { setSettingsOpen(false); setEffectsOpen(true) }} closeToTray={closeToTray} restorePlayback={restorePlayback} onSettingsChange={updateAppSettings}/></Modal>}
+    {effectsOpen && <Modal title="音效调整" onClose={() => setEffectsOpen(false)}><EqualizerPanel settings={state.equalizer} onPreset={selectEqualizerPreset} onBandChange={changeEqualizerBand}/></Modal>}
     {playlistDialog && <Modal title={playlistDialog === 'create' ? '新建播放列表' : playlistDialog === 'rename' ? '重命名播放列表' : '删除播放列表'} onClose={() => setPlaylistDialog(null)}>{playlistDialog === 'delete' ? <div className="confirm-dialog"><p>确定删除“{activePlaylist?.name}”吗？歌曲文件不会被删除。</p><div><button onClick={() => setPlaylistDialog(null)}>取消</button><button className="danger-primary" onClick={() => void submitPlaylistDialog()}>删除</button></div></div> : <div className="playlist-form"><label>名称<input autoFocus maxLength={60} value={playlistName} onChange={(event) => setPlaylistName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitPlaylistDialog() }} placeholder="输入播放列表名称"/></label><div><button onClick={() => setPlaylistDialog(null)}>取消</button><button className="primary" disabled={!playlistName.trim()} onClick={() => void submitPlaylistDialog()}>保存</button></div></div>}</Modal>}
     {addToPlaylistTrack && <Modal title="添加到播放列表" onClose={() => setAddToPlaylistTrack(null)}><div className="playlist-picker"><div className="picker-track"><Cover kind={addToPlaylistTrack.cover} size="small"/><span><strong>{addToPlaylistTrack.title}</strong><small>{addToPlaylistTrack.artist}</small></span></div>{state.playlists.length ? state.playlists.map((playlist) => <button key={playlist.id} disabled={playlist.trackIds.includes(addToPlaylistTrack.id)} onClick={() => void addTrackToPlaylist(playlist, addToPlaylistTrack)}><span><i className="playlist-dot"/>{playlist.name}</span><small>{playlist.trackIds.includes(addToPlaylistTrack.id) ? '已添加' : `${playlist.trackIds.length} 首`}</small></button>) : <div className="picker-empty"><p>还没有播放列表</p><button onClick={() => { setAddToPlaylistTrack(null); openPlaylistDialog('create') }}>新建播放列表</button></div>}</div></Modal>}
     {scanning && <div className="scan-overlay"><div className="scan-card"><div className="scan-spinner"><Disc3 size={25}/></div><div><strong>正在扫描音乐库</strong><p>{scanProgress.total ? `已处理 ${scanProgress.processed} / ${scanProgress.total} 个文件` : '正在查找音乐文件…'}</p><small>{scanProgress.currentPath}</small></div><div className="scan-progress"><span style={{ width: `${scanProgress.total ? scanProgress.processed / scanProgress.total * 100 : 8}%` }}/></div></div></div>}
@@ -834,15 +913,45 @@ function QueuePanel({ tracks, currentId, onClose, onPlay, onRemove }: { tracks: 
   return <aside className="queue-panel"><div className="panel-header"><div><h2>播放队列</h2><p>共 {tracks.length} 首歌曲</p></div><button title="关闭" onClick={onClose}><X size={18}/></button></div><div className="queue-list">{tracks.map((track) => <div className={track.id === currentId ? 'current' : ''} key={track.id} onDoubleClick={() => onPlay(track)}><span className="drag">⠿</span><Cover kind={track.cover} size="small"/><span><strong>{track.title}</strong><small>{track.artist}</small></span><small>{formatTime(track.duration)}</small><button title="从队列移除" onClick={() => onRemove(track.id)}><X size={14}/></button></div>)}</div></aside>
 }
 
-function SettingsPanel({ theme, setTheme, onImport, closeToTray, restorePlayback, onSettingsChange }: {
+function EqualizerPanel({ settings, onPreset, onBandChange }: {
+  settings: EqualizerSettings
+  onPreset: (preset: Exclude<EqualizerPreset, 'custom'>) => void
+  onBandChange: (band: 'bass' | 'mid' | 'treble', value: number) => void
+}) {
+  const presets: { id: Exclude<EqualizerPreset, 'custom'>; label: string; description: string }[] = [
+    { id: 'flat', label: '原声', description: '不改变原始声音' },
+    { id: 'bass', label: '低音', description: '增强鼓点与氛围' },
+    { id: 'vocal', label: '人声', description: '突出歌声与对白' },
+    { id: 'bright', label: '明亮', description: '提升清晰度与空气感' },
+  ]
+  const bands: { id: 'bass' | 'mid' | 'treble'; label: string; frequency: string }[] = [
+    { id: 'bass', label: '低音', frequency: '200 Hz 以下' },
+    { id: 'mid', label: '中音', frequency: '约 1 kHz' },
+    { id: 'treble', label: '高音', frequency: '4 kHz 以上' },
+  ]
+  const presetName = settings.preset === 'custom' ? '自定义' : presets.find((preset) => preset.id === settings.preset)?.label
+
+  return <div className="equalizer-panel">
+    <div className="equalizer-summary"><div><SlidersHorizontal size={20}/></div><span><strong>{presetName}</strong><small>调节会立即应用到当前播放</small></span></div>
+    <div className="equalizer-presets">{presets.map((preset) => <button key={preset.id} className={settings.preset === preset.id ? 'active' : ''} onClick={() => onPreset(preset.id)}><strong>{preset.label}</strong><span>{preset.description}</span></button>)}</div>
+    <div className="equalizer-bands">{bands.map((band) => {
+      const value = settings[band.id]
+      return <label key={band.id}><div><span><strong>{band.label}</strong><small>{band.frequency}</small></span><b>{value > 0 ? '+' : ''}{value} dB</b></div><input aria-label={`${band.label}增益`} type="range" min="-12" max="12" step="1" value={value} onChange={(event) => onBandChange(band.id, Number(event.target.value))} style={{ '--value': `${(value + 12) / 24 * 100}%` } as React.CSSProperties}/></label>
+    })}</div>
+    <p className="equalizer-hint">提升多个频段时会自动保留余量，减少爆音和削波。</p>
+  </div>
+}
+
+function SettingsPanel({ theme, setTheme, onImport, onOpenEffects, closeToTray, restorePlayback, onSettingsChange }: {
   theme: 'light' | 'dark'
   setTheme: (theme: 'light' | 'dark') => void
   onImport: () => void
+  onOpenEffects: () => void
   closeToTray: boolean
   restorePlayback: boolean
   onSettingsChange: (settings: Partial<AppSettings>) => void
 }) {
-  return <div className="settings-panel"><div className="setting-row"><div><strong>音乐文件夹</strong><span>选择泡面音乐扫描音频文件的位置</span></div><button onClick={onImport}>管理</button></div><div className="setting-row"><div><strong>外观</strong><span>选择应用界面主题</span></div><div className="segmented"><button className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}>浅色</button><button className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}>深色</button></div></div><div className="setting-row"><div><strong>恢复播放状态</strong><span>记住上次播放的歌曲、音量和模式</span></div><label className="switch"><input type="checkbox" checked={restorePlayback} onChange={(event) => onSettingsChange({ restorePlayback: event.target.checked })}/><span/></label></div><div className="setting-row"><div><strong>关闭窗口时</strong><span>进入系统托盘并继续播放；关闭后可从托盘重新打开</span></div><label className="switch"><input type="checkbox" checked={closeToTray} onChange={(event) => onSettingsChange({ closeToTray: event.target.checked })}/><span/></label></div><div className="setting-row"><div><strong>音乐库缓存</strong><span>歌曲信息和封面仅保存在本地</span></div><button title="后续版本提供">清理缓存</button></div><div className="about"><div className="brand-mark"><img src="/ramen-icon.png" alt="" /></div><span><strong>泡面音乐 0.1.0</strong><small>本地优先，无需账号，不依赖云端。</small></span></div></div>
+  return <div className="settings-panel"><div className="setting-row"><div><strong>音乐文件夹</strong><span>选择泡面音乐扫描音频文件的位置</span></div><button onClick={onImport}>管理</button></div><div className="setting-row"><div><strong>外观</strong><span>选择应用界面主题</span></div><div className="segmented"><button className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}>浅色</button><button className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}>深色</button></div></div><div className="setting-row"><div><strong>音效调整</strong><span>选择音效预设，或调节低音、中音和高音</span></div><button onClick={onOpenEffects}>调整</button></div><div className="setting-row"><div><strong>恢复播放状态</strong><span>记住上次播放的歌曲、音量和模式</span></div><label className="switch"><input type="checkbox" checked={restorePlayback} onChange={(event) => onSettingsChange({ restorePlayback: event.target.checked })}/><span/></label></div><div className="setting-row"><div><strong>关闭窗口时</strong><span>进入系统托盘并继续播放；关闭后可从托盘重新打开</span></div><label className="switch"><input type="checkbox" checked={closeToTray} onChange={(event) => onSettingsChange({ closeToTray: event.target.checked })}/><span/></label></div><div className="setting-row"><div><strong>音乐库缓存</strong><span>歌曲信息和封面仅保存在本地</span></div><button title="后续版本提供">清理缓存</button></div><div className="about"><div className="brand-mark"><img src="/ramen-icon.png" alt="" /></div><span><strong>泡面音乐 0.1.0</strong><small>本地优先，无需账号，不依赖云端。</small></span></div></div>
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {

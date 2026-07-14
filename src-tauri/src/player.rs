@@ -3,7 +3,16 @@ use rodio::{
     SampleRate, Source,
 };
 use serde::Serialize;
-use std::{fs::File, num::NonZeroU16, sync::Mutex, thread, time::Duration};
+use std::{
+    fs::File,
+    num::NonZeroU16,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc, Mutex,
+    },
+    thread,
+    time::Duration,
+};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 struct StereoSource<S> {
@@ -79,6 +88,113 @@ impl<S: Source> Source for StereoSource<S> {
     }
 }
 
+#[derive(Default)]
+struct EqualizerControls {
+    bass: AtomicU32,
+    mid: AtomicU32,
+    treble: AtomicU32,
+}
+
+impl EqualizerControls {
+    fn set(&self, bass: f32, mid: f32, treble: f32) {
+        self.bass
+            .store(bass.clamp(-12.0, 12.0).to_bits(), Ordering::Relaxed);
+        self.mid
+            .store(mid.clamp(-12.0, 12.0).to_bits(), Ordering::Relaxed);
+        self.treble
+            .store(treble.clamp(-12.0, 12.0).to_bits(), Ordering::Relaxed);
+    }
+
+    fn values(&self) -> (f32, f32, f32) {
+        (
+            f32::from_bits(self.bass.load(Ordering::Relaxed)),
+            f32::from_bits(self.mid.load(Ordering::Relaxed)),
+            f32::from_bits(self.treble.load(Ordering::Relaxed)),
+        )
+    }
+}
+
+struct EqualizerSource<S> {
+    inner: S,
+    controls: Arc<EqualizerControls>,
+    low_pass: [f32; 2],
+    high_pass_input: [f32; 2],
+    channel: usize,
+    low_alpha: f32,
+    high_alpha: f32,
+}
+
+impl<S: Source> EqualizerSource<S> {
+    fn new(inner: S, controls: Arc<EqualizerControls>) -> Self {
+        let sample_rate = inner.sample_rate().get() as f32;
+        let smoothing =
+            |cutoff: f32| 1.0 - (-2.0 * std::f32::consts::PI * cutoff / sample_rate).exp();
+        Self {
+            inner,
+            controls,
+            low_pass: [0.0; 2],
+            high_pass_input: [0.0; 2],
+            channel: 0,
+            low_alpha: smoothing(200.0),
+            high_alpha: smoothing(4_000.0),
+        }
+    }
+}
+
+impl<S: Source> Iterator for EqualizerSource<S> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let sample = self.inner.next()?;
+        let channel = self.channel;
+        self.channel = (self.channel + 1) % 2;
+
+        self.low_pass[channel] += self.low_alpha * (sample - self.low_pass[channel]);
+        self.high_pass_input[channel] += self.high_alpha * (sample - self.high_pass_input[channel]);
+
+        let low = self.low_pass[channel];
+        let high = sample - self.high_pass_input[channel];
+        let mid = self.high_pass_input[channel] - low;
+        let (bass, middle, treble) = self.controls.values();
+        let bass_gain = 10.0_f32.powf(bass / 20.0);
+        let mid_gain = 10.0_f32.powf(middle / 20.0);
+        let treble_gain = 10.0_f32.powf(treble / 20.0);
+        let headroom = bass_gain.max(mid_gain).max(treble_gain).max(1.0);
+
+        Some(((low * bass_gain + mid * mid_gain + high * treble_gain) / headroom).clamp(-1.0, 1.0))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<S: Source> Source for EqualizerSource<S> {
+    fn current_span_len(&self) -> Option<usize> {
+        self.inner.current_span_len()
+    }
+
+    fn channels(&self) -> ChannelCount {
+        self.inner.channels()
+    }
+
+    fn sample_rate(&self) -> SampleRate {
+        self.inner.sample_rate()
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
+
+    fn try_seek(&mut self, position: Duration) -> Result<(), SeekError> {
+        self.inner.try_seek(position)?;
+        self.low_pass = [0.0; 2];
+        self.high_pass_input = [0.0; 2];
+        self.channel = 0;
+        Ok(())
+    }
+}
+
 fn downmix_frame(frame: &[f32]) -> (f32, f32) {
     const CENTER: f32 = std::f32::consts::FRAC_1_SQRT_2;
     const SURROUND: f32 = std::f32::consts::FRAC_1_SQRT_2;
@@ -136,6 +252,7 @@ pub struct PlayerSnapshot {
 
 pub struct PlayerService {
     inner: Mutex<PlayerInner>,
+    equalizer: Arc<EqualizerControls>,
 }
 
 struct PlayerInner {
@@ -160,12 +277,21 @@ impl Default for PlayerService {
                 duration: 0.0,
                 volume: 0.72,
             }),
+            equalizer: Arc::new(EqualizerControls::default()),
         }
     }
 }
 
 impl PlayerService {
-    fn load(&self, path: String, track_id: String, volume: f32) -> Result<PlayerSnapshot, String> {
+    fn load(
+        &self,
+        path: String,
+        track_id: String,
+        volume: f32,
+        bass: f32,
+        mid: f32,
+        treble: f32,
+    ) -> Result<PlayerSnapshot, String> {
         let file = File::open(&path).map_err(|error| format!("无法打开音频文件：{error}"))?;
         let source =
             Decoder::try_from(file).map_err(|error| format!("无法解码音频文件：{error}"))?;
@@ -186,8 +312,12 @@ impl PlayerService {
         let player =
             Player::connect_new(inner.output.as_ref().expect("output initialized").mixer());
         let safe_volume = volume.clamp(0.0, 1.0);
+        self.equalizer.set(bass, mid, treble);
         player.set_volume(safe_volume);
-        player.append(StereoSource::new(source));
+        player.append(EqualizerSource::new(
+            StereoSource::new(source),
+            Arc::clone(&self.equalizer),
+        ));
         player.play();
         inner.player = Some(player);
         inner.track_id = Some(track_id);
@@ -251,12 +381,26 @@ pub fn player_load(
     path: String,
     track_id: String,
     volume: f32,
+    bass: f32,
+    mid: f32,
+    treble: f32,
     app: AppHandle,
     service: State<PlayerService>,
 ) -> Result<PlayerSnapshot, String> {
-    let snapshot = service.load(path, track_id, volume)?;
+    let snapshot = service.load(path, track_id, volume, bass, mid, treble)?;
     let _ = app.emit("player-state", snapshot.clone());
     Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn player_set_equalizer(
+    bass: f32,
+    mid: f32,
+    treble: f32,
+    service: State<PlayerService>,
+) -> Result<(), String> {
+    service.equalizer.set(bass, mid, treble);
+    Ok(())
 }
 
 #[tauri::command]
@@ -399,5 +543,30 @@ mod tests {
             StereoSource::new(source).collect::<Vec<_>>(),
             vec![0.1, 0.2, 0.3, 0.4]
         );
+    }
+
+    #[test]
+    fn flat_equalizer_preserves_stereo_samples() {
+        let samples = vec![0.1, -0.2, 0.3, -0.4];
+        let source = SamplesBuffer::new(
+            NonZeroU16::new(2).unwrap(),
+            NonZeroU32::new(48_000).unwrap(),
+            samples.clone(),
+        );
+        let output = EqualizerSource::new(source, Arc::new(EqualizerControls::default()))
+            .collect::<Vec<_>>();
+        for (actual, expected) in output.iter().zip(samples) {
+            assert!(
+                (actual - expected).abs() < 0.000_01,
+                "{actual} != {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn equalizer_controls_clamp_to_supported_range() {
+        let controls = EqualizerControls::default();
+        controls.set(20.0, -20.0, 3.5);
+        assert_eq!(controls.values(), (12.0, -12.0, 3.5));
     }
 }

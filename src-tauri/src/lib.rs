@@ -87,6 +87,7 @@ pub fn run() {
             player::player_pause,
             player::player_seek,
             player::player_set_volume,
+            player::player_set_equalizer,
             player::player_stop,
             player::player_get_state
         ])
