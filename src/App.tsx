@@ -15,7 +15,9 @@ import { demoTracks, formatTime } from './library'
 import { activeLyricIndex, parseLyrics } from './lyrics'
 import { nextPlaybackMode, playbackStateForMode, resolvePlaybackMode } from './playbackMode'
 import type { PlaybackMode } from './playbackMode'
-import { moveQueueItem } from './queueOrder'
+import { createTitleSortedQueue, isDatabaseInsertionOrder, moveQueueItem } from './queueOrder'
+import { sortTracks } from './trackSort'
+import type { SortDirection, TrackSortKey } from './trackSort'
 import type { Playlist, RepeatMode, Track, View } from './types'
 
 type PlayerState = {
@@ -240,7 +242,7 @@ function App() {
             for (const folder of folders) tracks = await invoke<Track[]>('scan_music_folder', { path: folder })
             if (!disposed) {
               state.setTracks(tracks)
-              state.setQueue(tracks.filter((track) => track.valid !== false).map((track) => track.id))
+              state.setQueue(createTitleSortedQueue(tracks))
             }
           } catch (error) {
             if (!disposed) setScanError(`自动更新音乐库失败：${String(error)}`)
@@ -276,7 +278,8 @@ function App() {
         if (!savedRecent.length && legacyRecent.length) void invoke('save_recent_tracks', { trackIds: legacyRecent })
         setCacheInfo(savedCacheInfo)
         const restoredQueue = savedQueue.filter((id) => validIds.has(id))
-        state.setQueue(restoredQueue.length ? restoredQueue : [...validIds])
+        const shouldNormalizeQueue = !restoredQueue.length || (restoredQueue.length === validIds.size && isDatabaseInsertionOrder(restoredQueue))
+        state.setQueue(shouldNormalizeQueue ? createTitleSortedQueue(tracks) : restoredQueue)
         const restoredTrack = appSettings.restorePlayback && savedPlayback.trackId
           ? tracks.find((track) => track.id === savedPlayback.trackId)
           : undefined
@@ -545,7 +548,7 @@ function App() {
     }))
     const tracks = [...added, ...state.tracks.filter((track) => !added.some((item) => item.id === track.id))]
     state.setTracks(tracks)
-    state.setQueue([...added.map((track) => track.id), ...state.queue])
+    state.setQueue(createTitleSortedQueue(tracks))
     setImportOpen(false); setView('songs')
     if (added[0]) playTrack(added[0])
   }
@@ -563,8 +566,7 @@ function App() {
     try {
       const tracks = await invoke<Track[]>('scan_music_folder', { path: selected })
       state.setTracks(tracks)
-      const playableIds = tracks.filter((track) => track.valid !== false).map((track) => track.id)
-      state.setQueue(playableIds)
+      state.setQueue(createTitleSortedQueue(tracks))
       if (tracks.length) state.setCurrent(tracks[0].id)
       setView('songs')
       const [folders, nextCacheInfo] = await Promise.all([
@@ -819,7 +821,7 @@ function App() {
 
         {view === 'albums' && <AlbumBrowser tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={setAddToPlaylistTrack}/>}
         {view === 'artists' && <ArtistBrowser tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={setAddToPlaylistTrack}/>}
-        {view !== 'discover' && view !== 'settings' && view !== 'albums' && view !== 'artists' && <TrackTable tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={view === 'playlist' ? undefined : setAddToPlaylistTrack} onRemove={view === 'playlist' ? removeTrackFromPlaylist : undefined} onReorder={view === 'playlist' ? reorderActivePlaylist : undefined}/>}
+        {view !== 'discover' && view !== 'settings' && view !== 'albums' && view !== 'artists' && <TrackTable tracks={filtered} defaultSortKey={view === 'songs' ? 'title' : undefined} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={view === 'playlist' ? undefined : setAddToPlaylistTrack} onRemove={view === 'playlist' ? removeTrackFromPlaylist : undefined} onReorder={view === 'playlist' ? reorderActivePlaylist : undefined}/>}
         {view === 'settings' && <SettingsPanel theme={theme} setTheme={setTheme} onManageFolders={openFolderManager} onOpenEffects={() => setEffectsOpen(true)} closeToTray={closeToTray} restorePlayback={restorePlayback} onSettingsChange={updateAppSettings} cacheInfo={cacheInfo} cacheBusy={cacheBusy} onClearCache={clearLibraryCache} onOpenDataDirectory={openDataDirectory} />}
       </section>
     </main>
@@ -1040,8 +1042,9 @@ function ArtistBrowser({ tracks, currentId, favorites, onPlay, onFavorite, onAdd
   </button>)}</div>
 }
 
-function TrackTable({ tracks, currentId, favorites, onPlay, onFavorite, onAdd, onRemove, onReorder }: {
+function TrackTable({ tracks, defaultSortKey, currentId, favorites, onPlay, onFavorite, onAdd, onRemove, onReorder }: {
   tracks: Track[]
+  defaultSortKey?: TrackSortKey
   currentId?: string
   favorites: string[]
   onPlay: (track: Track) => void
@@ -1050,8 +1053,19 @@ function TrackTable({ tracks, currentId, favorites, onPlay, onFavorite, onAdd, o
   onRemove?: (id: string) => void
   onReorder?: (sourceId: string, targetId: string) => void
 }) {
+  const [sortKey, setSortKey] = useState<TrackSortKey | undefined>(defaultSortKey)
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  useEffect(() => { setSortKey(defaultSortKey); setSortDirection('asc') }, [defaultSortKey])
+  const displayTracks = useMemo(() => sortTracks(tracks, sortKey, sortDirection), [tracks, sortKey, sortDirection])
+  const toggleSort = (key: TrackSortKey) => {
+    if (sortKey !== key) { setSortKey(key); setSortDirection('asc'); return }
+    if (sortDirection === 'asc') { setSortDirection('desc'); return }
+    setSortKey(defaultSortKey)
+    setSortDirection('asc')
+  }
   if (!tracks.length) return <div className="empty"><Disc3 size={38}/><h3>这里还没有音乐</h3><p>请添加音乐文件夹，或清除当前搜索。</p></div>
-  return <div className="track-table"><div className="track-head"><span>#</span><span>歌曲</span><span>专辑</span><span>格式</span><span>时长</span><span/></div>{tracks.map((track, index) => <div className={`track-row ${track.id === currentId ? 'playing' : ''}`} key={track.id} draggable={Boolean(onReorder)} onDragStart={(event) => event.dataTransfer.setData('text/plain', track.id)} onDragOver={(event) => { if (onReorder) event.preventDefault() }} onDrop={(event) => { event.preventDefault(); onReorder?.(event.dataTransfer.getData('text/plain'), track.id) }} onDoubleClick={() => onPlay(track)}><span className="track-index">{track.id === currentId ? <AudioLines size={15}/> : index + 1}</span><div className="track-title"><Cover kind={track.cover} size="small"/><div><strong>{track.title}</strong><span>{track.artist}</span></div></div><span>{track.album}</span><span><em>{track.format}</em></span><span>{formatTime(track.duration)}</span><div className="row-actions"><button title="收藏" onClick={() => onFavorite(track.id)}><Heart size={15} fill={favorites.includes(track.id) ? 'currentColor' : 'none'}/></button>{onRemove ? <button title="从播放列表移除" onClick={() => onRemove(track.id)}><X size={16}/></button> : <button title="添加到播放列表" onClick={() => onAdd?.(track)}><Plus size={16}/></button>}</div></div>)}</div>
+  const canReorder = Boolean(onReorder) && !sortKey
+  return <div className="track-table"><div className="track-head"><span>#</span><button className={sortKey === 'title' ? 'track-sort-button active' : 'track-sort-button'} onClick={() => toggleSort('title')}>歌曲{sortKey === 'title' && <b>{sortDirection === 'asc' ? '↑' : '↓'}</b>}</button><button className={sortKey === 'artist' ? 'track-sort-button active' : 'track-sort-button'} onClick={() => toggleSort('artist')}>歌手{sortKey === 'artist' && <b>{sortDirection === 'asc' ? '↑' : '↓'}</b>}</button><span>专辑</span><span>格式</span><span>时长</span><span/></div>{displayTracks.map((track, index) => <div className={`track-row ${track.id === currentId ? 'playing' : ''}`} key={track.id} draggable={canReorder} onDragStart={(event) => { if (canReorder) event.dataTransfer.setData('text/plain', track.id) }} onDragOver={(event) => { if (canReorder) event.preventDefault() }} onDrop={(event) => { if (!canReorder) return; event.preventDefault(); onReorder?.(event.dataTransfer.getData('text/plain'), track.id) }} onDoubleClick={() => onPlay(track)}><span className="track-index">{track.id === currentId ? <AudioLines size={15}/> : index + 1}</span><div className="track-title"><Cover kind={track.cover} size="small"/><div><strong>{track.title}</strong></div></div><span>{track.artist}</span><span>{track.album}</span><span><em>{track.format}</em></span><span>{formatTime(track.duration)}</span><div className="row-actions"><button title="收藏" onClick={() => onFavorite(track.id)}><Heart size={15} fill={favorites.includes(track.id) ? 'currentColor' : 'none'}/></button>{onRemove ? <button title="从播放列表移除" onClick={() => onRemove(track.id)}><X size={16}/></button> : <button title="添加到播放列表" onClick={() => onAdd?.(track)}><Plus size={16}/></button>}</div></div>)}</div>
 }
 
 function QueuePanel({ tracks, currentId, onClose, onPlay, onRemove, onReorder }: { tracks: Track[]; currentId?: string; onClose: () => void; onPlay: (track: Track) => void; onRemove: (id: string) => void; onReorder: (sourceId: string, targetId: string) => void }) {
