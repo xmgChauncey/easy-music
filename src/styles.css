@@ -192,6 +192,9 @@ input[type='range']:hover::-webkit-slider-thumb { opacity: 1; }
 .queue-list { max-height: 440px; overflow-y: auto; }
 .queue-list > div { height: 53px; display: grid; grid-template-columns: 18px 38px 1fr 30px 25px; align-items: center; gap: 8px; border-radius: 8px; padding: 0 5px; }
 .queue-list > div:hover, .queue-list > div.current { background: var(--panel); }
+.queue-list > div.dragging { opacity: .42; transform: scale(.98); }
+.queue-list > div[draggable='true'] { cursor: grab; transition: opacity .15s, transform .15s, background .15s; }
+.queue-list > div[draggable='true']:active { cursor: grabbing; }
 .queue-list .drag { color: var(--muted); cursor: grab; }
 .queue-list strong, .queue-list small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .queue-list strong { font-size: 10px; }
@@ -233,6 +236,25 @@ input[type='range']:hover::-webkit-slider-thumb { opacity: 1; }
 .setting-row > div:first-child strong { font-size: 12px; }
 .setting-row > div:first-child span { margin-top: 4px; color: var(--muted); font-size: 10px; }
 .setting-row > button { border: 1px solid var(--line); background: var(--card); border-radius: 7px; height: 30px; padding: 0 11px; cursor: pointer; font-size: 10px; }
+.setting-actions { display: flex; align-items: center; gap: 6px; }
+.setting-actions button { height: 30px; padding: 0 9px; display: flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: var(--card); cursor: pointer; font-size: 10px; }
+.setting-actions button:disabled { opacity: .5; cursor: wait; }
+.folder-manager-summary { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; color: var(--muted); font-size: 10px; }
+.folder-manager-summary button { height: 33px; padding: 0 11px; display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--card); cursor: pointer; font-size: 10px; }
+.folder-manager-summary button:disabled { opacity: .5; cursor: wait; }
+.folder-list { max-height: 350px; overflow-y: auto; border: 1px solid var(--line); border-radius: 11px; }
+.folder-item { min-height: 65px; padding: 10px 9px; display: grid; grid-template-columns: 36px minmax(0, 1fr) 32px; align-items: center; gap: 9px; border-bottom: 1px solid var(--line); }
+.folder-item:last-child { border-bottom: 0; }
+.folder-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: var(--accent); background: var(--accent-soft); }
+.folder-icon.unavailable { color: var(--muted); background: var(--panel); }
+.folder-item strong, .folder-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-item strong { font-size: 10px; }
+.folder-item span { margin-top: 4px; color: var(--muted); font-size: 8px; }
+.folder-item > button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 7px; color: var(--muted); background: none; cursor: pointer; }
+.folder-item > button:hover { color: var(--accent); background: var(--accent-soft); }
+.folder-item > button:disabled { opacity: .4; }
+.folder-empty { min-height: 130px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 10px; }
+.folder-manager-hint { display: block; margin: 10px 2px 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
 .segmented { padding: 3px; background: var(--panel); border-radius: 8px; display: flex; }
 .segmented button { height: 27px; border: 0; background: none; padding: 0 11px; border-radius: 6px; color: var(--muted); font-size: 10px; cursor: pointer; }
 .segmented button.active { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.1); }

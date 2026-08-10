@@ -6,7 +6,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import {
   Album, AudioLines, ChevronDown, ChevronLeft, ChevronRight, Disc3, FolderPlus,
   Heart, Home, ListEnd, ListMusic, Maximize2, MoreHorizontal, Music2, Pause,
-  Play, Plus, Repeat, Search, Settings, Shuffle, SkipBack, SkipForward, SlidersHorizontal,
+  Database, ExternalLink, Folder, Play, Plus, Repeat, Search, Settings, Shuffle, SkipBack, SkipForward, SlidersHorizontal,
   Sparkles, Star, Trash2, UserRound, Volume2, VolumeX, X,
 } from 'lucide-react'
 import { create } from 'zustand'
@@ -15,6 +15,7 @@ import { demoTracks, formatTime } from './library'
 import { activeLyricIndex, parseLyrics } from './lyrics'
 import { nextPlaybackMode, playbackStateForMode, resolvePlaybackMode } from './playbackMode'
 import type { PlaybackMode } from './playbackMode'
+import { moveQueueItem } from './queueOrder'
 import type { Playlist, RepeatMode, Track, View } from './types'
 
 type PlayerState = {
@@ -35,6 +36,8 @@ type PlayerState = {
   setQueue: (queue: string[]) => void
   setRepeat: (repeat: RepeatMode) => void
   setFavorites: (favorites: string[]) => void
+  setRecent: (recent: string[]) => void
+  recordRecent: (id: string) => void
   setShuffle: (shuffle: boolean) => void
   setPlaylists: (playlists: Playlist[]) => void
   setEqualizer: (equalizer: EqualizerSettings) => void
@@ -68,18 +71,20 @@ const usePlayer = create<PlayerState>()(persist((set) => ({
     { id: 'road', name: '公路旅行', trackIds: ['3', '5', '7'] },
   ],
   equalizer: equalizerPresets.flat,
-  setCurrent: (currentId) => set((state) => ({ currentId, recent: [currentId, ...state.recent.filter((id) => id !== currentId)].slice(0, 30) })),
+  setCurrent: (currentId) => set({ currentId }),
   setVolume: (volume) => set({ volume }),
   toggleFavorite: (id) => set((state) => ({ favorites: state.favorites.includes(id) ? state.favorites.filter((item) => item !== id) : [...state.favorites, id] })),
   setTracks: (tracks) => set({ tracks }),
   setQueue: (queue) => set({ queue }),
   setRepeat: (repeat) => set({ repeat }),
   setFavorites: (favorites) => set({ favorites }),
+  setRecent: (recent) => set({ recent }),
+  recordRecent: (id) => set((state) => ({ recent: [id, ...state.recent.filter((item) => item !== id)].slice(0, 30) })),
   setShuffle: (shuffle) => set({ shuffle }),
   setPlaylists: (playlists) => set({ playlists }),
   setEqualizer: (equalizer) => set({ equalizer }),
   toggleShuffle: () => set((state) => ({ shuffle: !state.shuffle })),
-}), { name: 'easy-music-state', partialize: (state) => ({ currentId: state.currentId, volume: state.volume, repeat: state.repeat, shuffle: state.shuffle, favorites: state.favorites, recent: state.recent, playlists: state.playlists, equalizer: state.equalizer }) }))
+}), { name: 'easy-music-state', partialize: (state) => ({ currentId: state.currentId, volume: state.volume, repeat: state.repeat, shuffle: state.shuffle, favorites: state.favorites, playlists: state.playlists, equalizer: state.equalizer }) }))
 
 const nav = [
   { id: 'discover', label: '发现', icon: Home },
@@ -98,6 +103,8 @@ type NativePlayerState = { trackId: string | null; path: string | null; status: 
 type SavedPlaybackState = { trackId: string | null; position: number; volume: number; repeatMode: RepeatMode; shuffle: boolean }
 type AppSettings = { closeToTray: boolean; restorePlayback: boolean }
 type LyricsPayload = { content: string; source: 'sidecar' | 'embedded'; sourcePath: string | null }
+type LibraryFolder = { path: string; addedAt: number; lastScannedAt: number | null; trackCount: number; validTrackCount: number; available: boolean }
+type LibraryCacheInfo = { dataDirectory: string; databaseBytes: number; coverBytes: number }
 
 function App() {
   const state = usePlayer()
@@ -109,6 +116,7 @@ function App() {
   const [queueOpen, setQueueOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [folderManagerOpen, setFolderManagerOpen] = useState(false)
   const [effectsOpen, setEffectsOpen] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState<ScanProgress>({ processed: 0, total: 0, currentPath: '' })
@@ -130,6 +138,10 @@ function App() {
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false)
   const [lyrics, setLyrics] = useState<LyricsPayload | null>(null)
   const [lyricsLoading, setLyricsLoading] = useState(false)
+  const [libraryFolders, setLibraryFolders] = useState<LibraryFolder[]>([])
+  const [foldersLoading, setFoldersLoading] = useState(false)
+  const [cacheInfo, setCacheInfo] = useState<LibraryCacheInfo | null>(null)
+  const [cacheBusy, setCacheBusy] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('easy-theme') as 'light' | 'dark') || 'light')
   const fileInput = useRef<HTMLInputElement>(null)
   const audio = useRef<HTMLAudioElement>(null)
@@ -247,8 +259,10 @@ function App() {
       invoke<SavedPlaybackState>('get_playback_state'),
       invoke<Playlist[]>('list_playlists'),
       invoke<AppSettings>('get_app_settings'),
+      invoke<string[]>('get_recent_tracks'),
+      invoke<LibraryCacheInfo>('get_library_cache_info'),
     ])
-      .then(([tracks, savedQueue, savedPlayback, playlists, appSettings]) => {
+      .then(([tracks, savedQueue, savedPlayback, playlists, appSettings, savedRecent, savedCacheInfo]) => {
         if (disposed) return
         state.setTracks(tracks)
         state.setPlaylists(playlists)
@@ -256,6 +270,11 @@ function App() {
         setRestorePlayback(appSettings.restorePlayback)
         state.setFavorites(tracks.filter((track) => track.favorite).map((track) => track.id))
         const validIds = new Set(tracks.filter((track) => track.valid !== false).map((track) => track.id))
+        const legacyRecent = state.recent.filter((id) => validIds.has(id))
+        const recent = savedRecent.length ? savedRecent : legacyRecent
+        state.setRecent(recent)
+        if (!savedRecent.length && legacyRecent.length) void invoke('save_recent_tracks', { trackIds: legacyRecent })
+        setCacheInfo(savedCacheInfo)
         const restoredQueue = savedQueue.filter((id) => validIds.has(id))
         state.setQueue(restoredQueue.length ? restoredQueue : [...validIds])
         const restoredTrack = appSettings.restorePlayback && savedPlayback.trackId
@@ -300,6 +319,10 @@ function App() {
 
   const playTrack = (track: Track) => {
     state.setCurrent(track.id)
+    state.recordRecent(track.id)
+    if (isTauri() && track.id.startsWith('db-')) {
+      void invoke('record_recent_track', { trackId: track.id }).catch((error) => setScanError(`最近播放保存失败：${String(error)}`))
+    }
     if (isTauri() && track.path) {
       endedTrack.current = null
       setProgress(0)
@@ -433,6 +456,48 @@ function App() {
     if (isTauri()) void invoke<NativePlayerState>('player_set_volume', { volume: value }).then(setNativePlayer).catch(() => undefined)
   }
 
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !current) return
+    const artwork = current.cover.startsWith('data:image/')
+      ? [{ src: current.cover }]
+      : [{ src: new URL('/ramen-icon.png', window.location.href).href, sizes: '512x512', type: 'image/png' }]
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: current.title,
+      artist: current.artist,
+      album: current.album,
+      artwork,
+    })
+  }, [current?.id, current?.title, current?.artist, current?.album, current?.cover])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'
+    const actions: Array<[MediaSessionAction, MediaSessionActionHandler | null]> = [
+      ['play', () => { if (!playing) togglePlay() }],
+      ['pause', () => { if (playing) togglePlay() }],
+      ['nexttrack', () => next()],
+      ['previoustrack', () => next(-1)],
+      ['seekto', (details) => { if (details.seekTime != null) seekPlayer(details.seekTime) }],
+      ['seekbackward', (details) => seekPlayer(Math.max(0, progress - (details.seekOffset || 10)))],
+      ['seekforward', (details) => seekPlayer(Math.min(duration || current?.duration || 0, progress + (details.seekOffset || 10)))],
+    ]
+    actions.forEach(([action, handler]) => {
+      try { navigator.mediaSession.setActionHandler(action, handler) } catch { /* WebView may omit individual actions. */ }
+    })
+    return () => actions.forEach(([action]) => {
+      try { navigator.mediaSession.setActionHandler(action, null) } catch { /* Ignore unsupported actions. */ }
+    })
+  }, [playing, current?.id, progress, duration, state.queue, state.shuffle, playbackMode])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    const total = duration || current?.duration || 0
+    if (!Number.isFinite(total) || total <= 0) return
+    try {
+      navigator.mediaSession.setPositionState({ duration: total, playbackRate: 1, position: Math.min(Math.max(0, progress), total) })
+    } catch { /* Ignore transient state while changing tracks. */ }
+  }, [current?.id, progress, duration])
+
   const selectEqualizerPreset = (preset: Exclude<EqualizerPreset, 'custom'>) => {
     state.setEqualizer({ ...equalizerPresets[preset] })
   }
@@ -499,11 +564,81 @@ function App() {
       state.setQueue(playableIds)
       if (tracks.length) state.setCurrent(tracks[0].id)
       setView('songs')
+      const [folders, nextCacheInfo] = await Promise.all([
+        invoke<LibraryFolder[]>('list_library_folders'),
+        invoke<LibraryCacheInfo>('get_library_cache_info'),
+      ])
+      setLibraryFolders(folders)
+      setCacheInfo(nextCacheInfo)
     } catch (error) {
       setScanError(`扫描失败：${String(error)}`)
     } finally {
       setScanning(false)
     }
+  }
+
+  const openFolderManager = async () => {
+    if (!isTauri()) { setImportOpen(true); return }
+    setFolderManagerOpen(true)
+    setFoldersLoading(true)
+    try {
+      setLibraryFolders(await invoke<LibraryFolder[]>('list_library_folders'))
+    } catch (error) {
+      setScanError(`读取音乐目录失败：${String(error)}`)
+    } finally {
+      setFoldersLoading(false)
+    }
+  }
+
+  const removeLibraryFolder = async (folder: LibraryFolder) => {
+    if (!window.confirm(`从音乐库移除“${folder.path}”？\n不会删除磁盘上的音乐文件。`)) return
+    setFoldersLoading(true)
+    try {
+      const tracks = await invoke<Track[]>('remove_library_folder', { path: folder.path })
+      const playable = tracks.filter((track) => track.valid !== false)
+      state.setTracks(tracks)
+      state.setQueue(state.queue.filter((id) => playable.some((track) => track.id === id)))
+      state.setRecent(state.recent.filter((id) => tracks.some((track) => track.id === id)))
+      if (!tracks.some((track) => track.id === current?.id)) {
+        state.setCurrent(playable[0]?.id || '')
+        setPlaying(false)
+        if (isTauri()) void invoke('player_stop').catch(() => undefined)
+      }
+      const [folders, nextCacheInfo] = await Promise.all([
+        invoke<LibraryFolder[]>('list_library_folders'),
+        invoke<LibraryCacheInfo>('get_library_cache_info'),
+      ])
+      setLibraryFolders(folders)
+      setCacheInfo(nextCacheInfo)
+    } catch (error) {
+      setScanError(`移除音乐目录失败：${String(error)}`)
+    } finally {
+      setFoldersLoading(false)
+    }
+  }
+
+  const reorderQueue = (sourceId: string, targetId: string) => {
+    state.setQueue(moveQueueItem(state.queue, sourceId, targetId))
+  }
+
+  const clearLibraryCache = async () => {
+    if (!isTauri() || !window.confirm('清理失效歌曲记录和已缓存的内嵌封面？\n收藏、播放列表和音乐文件不会被删除。')) return
+    setCacheBusy(true)
+    try {
+      const nextCacheInfo = await invoke<LibraryCacheInfo>('clear_library_cache')
+      const tracks = await invoke<Track[]>('get_library_tracks')
+      state.setTracks(tracks)
+      state.setFavorites(tracks.filter((track) => track.favorite).map((track) => track.id))
+      setCacheInfo(nextCacheInfo)
+    } catch (error) {
+      setScanError(`清理缓存失败：${String(error)}`)
+    } finally {
+      setCacheBusy(false)
+    }
+  }
+
+  const openDataDirectory = () => {
+    if (isTauri()) void invoke('open_app_data_directory').catch((error) => setScanError(`打开数据目录失败：${String(error)}`))
   }
 
   const openPlaylistDialog = (mode: 'create' | 'rename' | 'delete') => {
@@ -682,7 +817,7 @@ function App() {
         {view === 'albums' && <AlbumBrowser tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={setAddToPlaylistTrack}/>}
         {view === 'artists' && <ArtistBrowser tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={setAddToPlaylistTrack}/>}
         {view !== 'discover' && view !== 'settings' && view !== 'albums' && view !== 'artists' && <TrackTable tracks={filtered} currentId={current?.id} favorites={state.favorites} onPlay={playTrack} onFavorite={toggleFavorite} onAdd={view === 'playlist' ? undefined : setAddToPlaylistTrack} onRemove={view === 'playlist' ? removeTrackFromPlaylist : undefined} onReorder={view === 'playlist' ? reorderActivePlaylist : undefined}/>}
-        {view === 'settings' && <SettingsPanel theme={theme} setTheme={setTheme} onImport={chooseMusicFolder} onOpenEffects={() => setEffectsOpen(true)} closeToTray={closeToTray} restorePlayback={restorePlayback} onSettingsChange={updateAppSettings} />}
+        {view === 'settings' && <SettingsPanel theme={theme} setTheme={setTheme} onManageFolders={openFolderManager} onOpenEffects={() => setEffectsOpen(true)} closeToTray={closeToTray} restorePlayback={restorePlayback} onSettingsChange={updateAppSettings} cacheInfo={cacheInfo} cacheBusy={cacheBusy} onClearCache={clearLibraryCache} onOpenDataDirectory={openDataDirectory} />}
       </section>
     </main>
 
@@ -713,9 +848,16 @@ function App() {
       <div className="player-tools"><button onClick={() => setQueueOpen(!queueOpen)} className={queueOpen ? 'selected' : ''} title="播放队列"><ListMusic size={18}/></button><button onClick={() => setEffectsOpen(true)} className={effectsOpen ? 'selected' : ''} title={`音效：${state.equalizer.preset === 'custom' ? '自定义' : { flat: '原声', bass: '低音', vocal: '人声', bright: '明亮' }[state.equalizer.preset]}`}><SlidersHorizontal size={17}/></button><button onClick={() => changeVolume(state.volume ? 0 : .72)} title={state.volume ? '静音' : '取消静音'}>{state.volume ? <Volume2 size={18}/> : <VolumeX size={18}/>}</button><input className="volume" aria-label="音量" type="range" min="0" max="1" step=".01" value={state.volume} onChange={(e) => changeVolume(Number(e.target.value))} style={{'--value': `${state.volume * 100}%`} as React.CSSProperties}/><span className="volume-percent">{Math.round(state.volume * 100)}%</span><button onClick={() => setNowPlayingOpen(true)} title="打开正在播放"><Maximize2 size={16}/></button><button onClick={() => void toggleMiniMode()} title="迷你播放器"><ChevronDown size={17}/></button></div>
     </footer>
 
-    {queueOpen && <QueuePanel tracks={state.queue.map((id) => state.tracks.find((track) => track.id === id)).filter(Boolean) as Track[]} currentId={current?.id} onClose={() => setQueueOpen(false)} onPlay={playTrack} onRemove={(id) => state.setQueue(state.queue.filter((item) => item !== id))}/>} 
+    {queueOpen && <QueuePanel tracks={state.queue.map((id) => state.tracks.find((track) => track.id === id)).filter(Boolean) as Track[]} currentId={current?.id} onClose={() => setQueueOpen(false)} onPlay={playTrack} onRemove={(id) => state.setQueue(state.queue.filter((item) => item !== id))} onReorder={reorderQueue}/>}
     {importOpen && <Modal title="选择音乐目录" onClose={() => setImportOpen(false)}><div className="drop-zone" onClick={() => fileInput.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); importFiles(e.dataTransfer.files) }}><div className="drop-icon"><FolderPlus size={26}/></div><h3>选择音乐文件夹</h3><p>也可以将文件夹拖放到这里</p><small>将扫描其中的 MP3、FLAC、WAV、AAC、M4A 和 OGG</small><button>选择目录</button></div><input ref={setFolderInput} type="file" multiple accept="audio/*,.flac,.m4a,.ogg" hidden onChange={(e) => importFiles(e.target.files)}/></Modal>}
-    {settingsOpen && <Modal title="设置" onClose={() => setSettingsOpen(false)}><SettingsPanel theme={theme} setTheme={setTheme} onImport={() => { setSettingsOpen(false); void chooseMusicFolder() }} onOpenEffects={() => { setSettingsOpen(false); setEffectsOpen(true) }} closeToTray={closeToTray} restorePlayback={restorePlayback} onSettingsChange={updateAppSettings}/></Modal>}
+    {settingsOpen && <Modal title="设置" onClose={() => setSettingsOpen(false)}><SettingsPanel theme={theme} setTheme={setTheme} onManageFolders={() => { setSettingsOpen(false); void openFolderManager() }} onOpenEffects={() => { setSettingsOpen(false); setEffectsOpen(true) }} closeToTray={closeToTray} restorePlayback={restorePlayback} onSettingsChange={updateAppSettings} cacheInfo={cacheInfo} cacheBusy={cacheBusy} onClearCache={clearLibraryCache} onOpenDataDirectory={openDataDirectory}/></Modal>}
+    {folderManagerOpen && <Modal title="音乐目录管理" onClose={() => setFolderManagerOpen(false)}><div className="folder-manager">
+      <div className="folder-manager-summary"><span>已添加 {libraryFolders.length} 个目录</span><button onClick={() => void chooseMusicFolder()} disabled={scanning || foldersLoading}><FolderPlus size={15}/>添加目录</button></div>
+      <div className="folder-list">{foldersLoading && !libraryFolders.length ? <div className="folder-empty">正在读取目录…</div> : libraryFolders.length ? libraryFolders.map((folder) => <div className="folder-item" key={folder.path}>
+        <div className={folder.available ? 'folder-icon' : 'folder-icon unavailable'}><Folder size={18}/></div><div><strong title={folder.path}>{folder.path}</strong><span>{folder.available ? `${folder.validTrackCount} 首可播放歌曲` : '目录当前不可用'}{folder.trackCount !== folder.validTrackCount ? ` · ${folder.trackCount - folder.validTrackCount} 条失效记录` : ''}</span></div><button title="从音乐库移除" disabled={foldersLoading} onClick={() => void removeLibraryFolder(folder)}><Trash2 size={15}/></button>
+      </div>) : <div className="folder-empty"><FolderPlus size={25}/><span>还没有添加音乐目录</span></div>}</div>
+      <small className="folder-manager-hint">移除目录只会清除音乐库索引，不会删除磁盘上的文件。</small>
+    </div></Modal>}
     {effectsOpen && <Modal title="音效调整" onClose={() => setEffectsOpen(false)}><EqualizerPanel settings={state.equalizer} onPreset={selectEqualizerPreset} onBandChange={changeEqualizerBand}/></Modal>}
     {playlistDialog && <Modal title={playlistDialog === 'create' ? '新建播放列表' : playlistDialog === 'rename' ? '重命名播放列表' : '删除播放列表'} onClose={() => setPlaylistDialog(null)}>{playlistDialog === 'delete' ? <div className="confirm-dialog"><p>确定删除“{activePlaylist?.name}”吗？歌曲文件不会被删除。</p><div><button onClick={() => setPlaylistDialog(null)}>取消</button><button className="danger-primary" onClick={() => void submitPlaylistDialog()}>删除</button></div></div> : <div className="playlist-form"><label>名称<input autoFocus maxLength={60} value={playlistName} onChange={(event) => setPlaylistName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitPlaylistDialog() }} placeholder="输入播放列表名称"/></label><div><button onClick={() => setPlaylistDialog(null)}>取消</button><button className="primary" disabled={!playlistName.trim()} onClick={() => void submitPlaylistDialog()}>保存</button></div></div>}</Modal>}
     {addToPlaylistTrack && <Modal title="添加到播放列表" onClose={() => setAddToPlaylistTrack(null)}><div className="playlist-picker"><div className="picker-track"><Cover kind={addToPlaylistTrack.cover} size="small"/><span><strong>{addToPlaylistTrack.title}</strong><small>{addToPlaylistTrack.artist}</small></span></div>{state.playlists.length ? state.playlists.map((playlist) => <button key={playlist.id} disabled={playlist.trackIds.includes(addToPlaylistTrack.id)} onClick={() => void addTrackToPlaylist(playlist, addToPlaylistTrack)}><span><i className="playlist-dot"/>{playlist.name}</span><small>{playlist.trackIds.includes(addToPlaylistTrack.id) ? '已添加' : `${playlist.trackIds.length} 首`}</small></button>) : <div className="picker-empty"><p>还没有播放列表</p><button onClick={() => { setAddToPlaylistTrack(null); openPlaylistDialog('create') }}>新建播放列表</button></div>}</div></Modal>}
@@ -909,8 +1051,9 @@ function TrackTable({ tracks, currentId, favorites, onPlay, onFavorite, onAdd, o
   return <div className="track-table"><div className="track-head"><span>#</span><span>歌曲</span><span>专辑</span><span>格式</span><span>时长</span><span/></div>{tracks.map((track, index) => <div className={`track-row ${track.id === currentId ? 'playing' : ''}`} key={track.id} draggable={Boolean(onReorder)} onDragStart={(event) => event.dataTransfer.setData('text/plain', track.id)} onDragOver={(event) => { if (onReorder) event.preventDefault() }} onDrop={(event) => { event.preventDefault(); onReorder?.(event.dataTransfer.getData('text/plain'), track.id) }} onDoubleClick={() => onPlay(track)}><span className="track-index">{track.id === currentId ? <AudioLines size={15}/> : index + 1}</span><div className="track-title"><Cover kind={track.cover} size="small"/><div><strong>{track.title}</strong><span>{track.artist}</span></div></div><span>{track.album}</span><span><em>{track.format}</em></span><span>{formatTime(track.duration)}</span><div className="row-actions"><button title="收藏" onClick={() => onFavorite(track.id)}><Heart size={15} fill={favorites.includes(track.id) ? 'currentColor' : 'none'}/></button>{onRemove ? <button title="从播放列表移除" onClick={() => onRemove(track.id)}><X size={16}/></button> : <button title="添加到播放列表" onClick={() => onAdd?.(track)}><Plus size={16}/></button>}</div></div>)}</div>
 }
 
-function QueuePanel({ tracks, currentId, onClose, onPlay, onRemove }: { tracks: Track[]; currentId?: string; onClose: () => void; onPlay: (track: Track) => void; onRemove: (id: string) => void }) {
-  return <aside className="queue-panel"><div className="panel-header"><div><h2>播放队列</h2><p>共 {tracks.length} 首歌曲</p></div><button title="关闭" onClick={onClose}><X size={18}/></button></div><div className="queue-list">{tracks.map((track) => <div className={track.id === currentId ? 'current' : ''} key={track.id} onDoubleClick={() => onPlay(track)}><span className="drag">⠿</span><Cover kind={track.cover} size="small"/><span><strong>{track.title}</strong><small>{track.artist}</small></span><small>{formatTime(track.duration)}</small><button title="从队列移除" onClick={() => onRemove(track.id)}><X size={14}/></button></div>)}</div></aside>
+function QueuePanel({ tracks, currentId, onClose, onPlay, onRemove, onReorder }: { tracks: Track[]; currentId?: string; onClose: () => void; onPlay: (track: Track) => void; onRemove: (id: string) => void; onReorder: (sourceId: string, targetId: string) => void }) {
+  const [draggingId, setDraggingId] = useState('')
+  return <aside className="queue-panel"><div className="panel-header"><div><h2>播放队列</h2><p>共 {tracks.length} 首歌曲 · 可拖动排序</p></div><button title="关闭" onClick={onClose}><X size={18}/></button></div><div className="queue-list">{tracks.map((track) => <div className={`${track.id === currentId ? 'current' : ''} ${track.id === draggingId ? 'dragging' : ''}`} key={track.id} draggable onDragStart={(event) => { setDraggingId(track.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', track.id) }} onDragEnd={() => setDraggingId('')} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); onReorder(event.dataTransfer.getData('text/plain'), track.id); setDraggingId('') }} onDoubleClick={() => onPlay(track)}><span className="drag" title="拖动排序">⠿</span><Cover kind={track.cover} size="small"/><span><strong>{track.title}</strong><small>{track.artist}</small></span><small>{formatTime(track.duration)}</small><button title="从队列移除" onClick={() => onRemove(track.id)}><X size={14}/></button></div>)}</div></aside>
 }
 
 function EqualizerPanel({ settings, onPreset, onBandChange }: {
@@ -942,16 +1085,26 @@ function EqualizerPanel({ settings, onPreset, onBandChange }: {
   </div>
 }
 
-function SettingsPanel({ theme, setTheme, onImport, onOpenEffects, closeToTray, restorePlayback, onSettingsChange }: {
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+}
+
+function SettingsPanel({ theme, setTheme, onManageFolders, onOpenEffects, closeToTray, restorePlayback, onSettingsChange, cacheInfo, cacheBusy, onClearCache, onOpenDataDirectory }: {
   theme: 'light' | 'dark'
   setTheme: (theme: 'light' | 'dark') => void
-  onImport: () => void
+  onManageFolders: () => void
   onOpenEffects: () => void
   closeToTray: boolean
   restorePlayback: boolean
   onSettingsChange: (settings: Partial<AppSettings>) => void
+  cacheInfo: LibraryCacheInfo | null
+  cacheBusy: boolean
+  onClearCache: () => void
+  onOpenDataDirectory: () => void
 }) {
-  return <div className="settings-panel"><div className="setting-row"><div><strong>音乐文件夹</strong><span>选择泡面音乐扫描音频文件的位置</span></div><button onClick={onImport}>管理</button></div><div className="setting-row"><div><strong>外观</strong><span>选择应用界面主题</span></div><div className="segmented"><button className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}>浅色</button><button className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}>深色</button></div></div><div className="setting-row"><div><strong>音效调整</strong><span>选择音效预设，或调节低音、中音和高音</span></div><button onClick={onOpenEffects}>调整</button></div><div className="setting-row"><div><strong>恢复播放状态</strong><span>记住上次播放的歌曲、音量和模式</span></div><label className="switch"><input type="checkbox" checked={restorePlayback} onChange={(event) => onSettingsChange({ restorePlayback: event.target.checked })}/><span/></label></div><div className="setting-row"><div><strong>关闭窗口时</strong><span>进入系统托盘并继续播放；关闭后可从托盘重新打开</span></div><label className="switch"><input type="checkbox" checked={closeToTray} onChange={(event) => onSettingsChange({ closeToTray: event.target.checked })}/><span/></label></div><div className="setting-row"><div><strong>音乐库缓存</strong><span>歌曲信息和封面仅保存在本地</span></div><button title="后续版本提供">清理缓存</button></div><div className="about"><div className="brand-mark"><img src="/ramen-icon.png" alt="" /></div><span><strong>泡面音乐 0.1.0</strong><small>本地优先，无需账号，不依赖云端。</small></span></div></div>
+  return <div className="settings-panel"><div className="setting-row"><div><strong>音乐文件夹</strong><span>添加、查看或移除音乐库扫描目录</span></div><button onClick={onManageFolders}>管理</button></div><div className="setting-row"><div><strong>外观</strong><span>选择应用界面主题</span></div><div className="segmented"><button className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}>浅色</button><button className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}>深色</button></div></div><div className="setting-row"><div><strong>音效调整</strong><span>选择音效预设，或调节低音、中音和高音</span></div><button onClick={onOpenEffects}>调整</button></div><div className="setting-row"><div><strong>恢复播放状态</strong><span>记住上次播放的歌曲、音量和模式</span></div><label className="switch"><input type="checkbox" checked={restorePlayback} onChange={(event) => onSettingsChange({ restorePlayback: event.target.checked })}/><span/></label></div><div className="setting-row"><div><strong>关闭窗口时</strong><span>进入系统托盘并继续播放；关闭后可从托盘重新打开</span></div><label className="switch"><input type="checkbox" checked={closeToTray} onChange={(event) => onSettingsChange({ closeToTray: event.target.checked })}/><span/></label></div><div className="setting-row cache-setting"><div><strong>音乐库缓存</strong><span>{cacheInfo ? `数据库 ${formatBytes(cacheInfo.databaseBytes)} · 内嵌封面 ${formatBytes(cacheInfo.coverBytes)}` : '歌曲信息和封面仅保存在本地'}</span></div><div className="setting-actions"><button onClick={onOpenDataDirectory} title={cacheInfo?.dataDirectory}><ExternalLink size={13}/>位置</button><button disabled={cacheBusy} onClick={onClearCache}><Database size={13}/>{cacheBusy ? '清理中…' : '清理'}</button></div></div><div className="about"><div className="brand-mark"><img src="/ramen-icon.png" alt="" /></div><span><strong>泡面音乐 0.1.0</strong><small>本地优先，无需账号，不依赖云端。</small></span></div></div>
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {

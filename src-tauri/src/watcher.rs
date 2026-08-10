@@ -69,4 +69,21 @@ impl LibraryWatcher {
         watched.insert(canonical);
         Ok(())
     }
+
+    pub fn unwatch_folder(&self, path: &Path) -> Result<(), String> {
+        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let mut watched = self
+            .watched
+            .lock()
+            .map_err(|_| "目录监听状态不可用".to_string())?;
+        if !watched.remove(&canonical) {
+            return Ok(());
+        }
+        let _ = self
+            .watcher
+            .lock()
+            .map_err(|_| "目录监听器不可用".to_string())?
+            .unwatch(&canonical);
+        Ok(())
+    }
 }

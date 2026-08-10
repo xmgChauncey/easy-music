@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    process::Command,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -28,6 +31,23 @@ pub fn set_app_settings(
     preferences
         .close_to_tray
         .store(close_to_tray, Ordering::Relaxed);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_app_data_directory(app: AppHandle) -> Result<(), String> {
+    let directory = crate::library::app_data_directory(&app)?;
+    std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    #[cfg(target_os = "windows")]
+    let mut command = Command::new("explorer");
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = Command::new("xdg-open");
+    command
+        .arg(directory)
+        .spawn()
+        .map_err(|error| format!("无法打开数据目录：{error}"))?;
     Ok(())
 }
 

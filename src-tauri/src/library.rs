@@ -56,6 +56,25 @@ pub struct AppSettingsDto {
     pub restore_playback: bool,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryFolderDto {
+    pub path: String,
+    pub added_at: i64,
+    pub last_scanned_at: Option<i64>,
+    pub track_count: u64,
+    pub valid_track_count: u64,
+    pub available: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryCacheInfoDto {
+    pub data_directory: String,
+    pub database_bytes: u64,
+    pub cover_bytes: u64,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ScanProgress {
@@ -155,7 +174,16 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
              );
 
              INSERT OR IGNORE INTO app_settings(singleton, close_to_tray, restore_playback)
-               VALUES (1, 1, 1);",
+               VALUES (1, 1, 1);
+
+             CREATE TABLE IF NOT EXISTS recent_plays (
+               track_id INTEGER PRIMARY KEY,
+               played_at INTEGER NOT NULL,
+               FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE
+             );
+
+             CREATE INDEX IF NOT EXISTS recent_plays_played_at_idx
+               ON recent_plays(played_at DESC);",
         )
         .map_err(|error| error.to_string())?;
     Ok(())
@@ -447,6 +475,93 @@ pub fn save_playback_state(
 }
 
 #[tauri::command]
+pub fn get_recent_tracks(app: AppHandle) -> Result<Vec<String>, String> {
+    let connection = open_database(&app)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT r.track_id FROM recent_plays r
+             JOIN tracks t ON t.id = r.track_id
+             WHERE t.valid = 1
+             ORDER BY r.played_at DESC, r.track_id DESC LIMIT 30",
+        )
+        .map_err(|error| error.to_string())?;
+    let ids = statement
+        .query_map([], |row| row.get::<_, i64>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    Ok(ids.into_iter().map(|id| format!("db-{id}")).collect())
+}
+
+#[tauri::command]
+pub fn record_recent_track(track_id: String, app: AppHandle) -> Result<(), String> {
+    let id = parse_track_id(&track_id)?;
+    let connection = open_database(&app)?;
+    connection
+        .execute(
+            "INSERT INTO recent_plays(track_id, played_at)
+             SELECT id, ?2 FROM tracks WHERE id = ?1 AND valid = 1
+             ON CONFLICT(track_id) DO UPDATE SET played_at = excluded.played_at",
+            params![id, unix_timestamp_millis(SystemTime::now())],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "DELETE FROM recent_plays WHERE track_id NOT IN (
+               SELECT track_id FROM recent_plays ORDER BY played_at DESC, track_id DESC LIMIT 30
+             )",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_recent_tracks(track_ids: Vec<String>, app: AppHandle) -> Result<(), String> {
+    let mut connection = open_database(&app)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute("DELETE FROM recent_plays", [])
+        .map_err(|error| error.to_string())?;
+    let now = unix_timestamp_millis(SystemTime::now());
+    for (position, track_id) in track_ids.into_iter().take(30).enumerate() {
+        if let Ok(id) = parse_track_id(&track_id) {
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO recent_plays(track_id, played_at)
+                     SELECT id, ?2 FROM tracks WHERE id = ?1 AND valid = 1",
+                    params![id, now - position as i64],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    transaction.commit().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_library_cache_info(app: AppHandle) -> Result<LibraryCacheInfoDto, String> {
+    library_cache_info(&app)
+}
+
+#[tauri::command]
+pub fn clear_library_cache(app: AppHandle) -> Result<LibraryCacheInfoDto, String> {
+    let connection = open_database(&app)?;
+    connection
+        .execute("DELETE FROM tracks WHERE valid = 0", [])
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute("UPDATE tracks SET cover = NULL WHERE cover IS NOT NULL", [])
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+        .map_err(|error| error.to_string())?;
+    drop(connection);
+    library_cache_info(&app)
+}
+
+#[tauri::command]
 pub fn get_library_tracks(app: AppHandle) -> Result<Vec<TrackDto>, String> {
     let connection = open_database(&app)?;
     query_tracks(&connection)
@@ -457,8 +572,53 @@ pub fn get_library_folders(app: AppHandle) -> Result<Vec<String>, String> {
     managed_folders(&app)
 }
 
-pub fn managed_folders(app: &AppHandle) -> Result<Vec<String>, String> {
+#[tauri::command]
+pub fn list_library_folders(app: AppHandle) -> Result<Vec<LibraryFolderDto>, String> {
     let connection = open_database(&app)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT f.path, f.added_at, f.last_scanned_at,
+                    COUNT(t.id), COALESCE(SUM(CASE WHEN t.valid = 1 THEN 1 ELSE 0 END), 0)
+             FROM library_folders f
+             LEFT JOIN tracks t ON t.folder_path = f.path
+             GROUP BY f.path, f.added_at, f.last_scanned_at
+             ORDER BY f.added_at, f.path",
+        )
+        .map_err(|error| error.to_string())?;
+    let folders = statement
+        .query_map([], |row| {
+            let path: String = row.get(0)?;
+            Ok(LibraryFolderDto {
+                available: Path::new(&path).is_dir(),
+                path,
+                added_at: row.get(1)?,
+                last_scanned_at: row.get(2)?,
+                track_count: row.get::<_, i64>(3)?.max(0) as u64,
+                valid_track_count: row.get::<_, i64>(4)?.max(0) as u64,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    Ok(folders)
+}
+
+#[tauri::command]
+pub fn remove_library_folder(path: String, app: AppHandle) -> Result<Vec<TrackDto>, String> {
+    let connection = open_database(&app)?;
+    let removed = connection
+        .execute("DELETE FROM library_folders WHERE path = ?1", [&path])
+        .map_err(|error| error.to_string())?;
+    if removed == 0 {
+        return Err("音乐目录不存在或已被移除".into());
+    }
+    app.state::<crate::watcher::LibraryWatcher>()
+        .unwatch_folder(Path::new(&path))?;
+    query_tracks(&connection)
+}
+
+pub fn managed_folders(app: &AppHandle) -> Result<Vec<String>, String> {
+    let connection = open_database(app)?;
     let mut statement = connection
         .prepare("SELECT path FROM library_folders ORDER BY added_at")
         .map_err(|error| error.to_string())?;
@@ -742,12 +902,45 @@ fn query_playlists(connection: &Connection) -> Result<Vec<PlaylistDto>, String> 
 }
 
 fn open_database(app: &AppHandle) -> Result<Connection, String> {
-    let directory = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?;
+    let directory = app_data_directory(app)?;
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-    Connection::open(directory.join("music-library.sqlite3")).map_err(|error| error.to_string())
+    let connection = Connection::open(directory.join("music-library.sqlite3"))
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute_batch("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;")
+        .map_err(|error| error.to_string())?;
+    Ok(connection)
+}
+
+pub(crate) fn app_data_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path().app_data_dir().map_err(|error| error.to_string())
+}
+
+fn library_cache_info(app: &AppHandle) -> Result<LibraryCacheInfoDto, String> {
+    let directory = app_data_directory(app)?;
+    let connection = open_database(app)?;
+    let cover_bytes = connection
+        .query_row(
+            "SELECT COALESCE(SUM(LENGTH(cover)), 0) FROM tracks WHERE cover LIKE 'data:image/%'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())?
+        .max(0) as u64;
+    let database_bytes = [
+        "music-library.sqlite3",
+        "music-library.sqlite3-wal",
+        "music-library.sqlite3-shm",
+    ]
+    .iter()
+    .filter_map(|name| fs::metadata(directory.join(name)).ok())
+    .map(|metadata| metadata.len())
+    .sum();
+    Ok(LibraryCacheInfoDto {
+        data_directory: path_text(&directory),
+        database_bytes,
+        cover_bytes,
+    })
 }
 
 pub(crate) fn is_supported(path: &Path) -> bool {
@@ -769,6 +962,12 @@ fn unix_timestamp(time: SystemTime) -> i64 {
     time.duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+fn unix_timestamp_millis(time: SystemTime) -> i64 {
+    time.duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
 }
 
 fn cover_kind(id: i64) -> String {
