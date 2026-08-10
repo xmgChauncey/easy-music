@@ -312,7 +312,10 @@ function App() {
       : view === 'recent' ? state.recent.map((id) => state.tracks.find((track) => track.id === id)).filter(Boolean) as Track[]
       : view === 'playlist' ? (activePlaylist?.trackIds.map((id) => state.tracks.find((track) => track.id === id)).filter(Boolean) as Track[] || [])
       : state.tracks
-    return query ? base.filter((track) => `${track.title} ${track.artist} ${track.album}`.toLocaleLowerCase().includes(query)) : base
+    const matches = query ? base.filter((track) => `${track.title} ${track.artist} ${track.album}`.toLocaleLowerCase().includes(query)) : base
+    return view === 'songs'
+      ? [...matches].sort((left, right) => left.title.localeCompare(right.title, 'zh-CN', { sensitivity: 'base', numeric: true }) || left.artist.localeCompare(right.artist, 'zh-CN', { sensitivity: 'base' }))
+      : matches
   }, [search, state.tracks, state.favorites, state.recent, state.playlists, activePlaylistId, view])
   const albumCount = useMemo(() => new Set(filtered.map((track) => (track.album.trim() || '未知专辑').toLocaleLowerCase())).size, [filtered])
   const artistCount = useMemo(() => new Set(filtered.map((track) => (track.artist.trim() || '未知歌手').toLocaleLowerCase())).size, [filtered])
